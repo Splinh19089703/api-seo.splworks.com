@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build output (build trên local, không cần push)
+# Nếu muốn deploy bằng cách push dist/ lên git thì bỏ comment dòng dưới
+# dist/
+
+# Environment
+.env
+.env.local
+.env.production.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
