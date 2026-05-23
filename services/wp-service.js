@@ -170,9 +170,9 @@ class WpService {
           validateStatus: () => true, // don't throw on any status
           maxRedirects: 2,
         });
-        // Accept: 200, 201, 401 (auth required but route exists)
-        // Reject: 403 (rewrite block), 404 (route not found)
-        if (probe.status < 400 || probe.status === 401) return url;
+        // Accept: 200, 201, 401, 403 (auth required but route exists)
+        // Reject: 404 (route not found)
+        if (probe.status < 400 || probe.status === 401 || probe.status === 403) return url;
       } catch {}
     }
     // Fallback: query param mode (always works)
