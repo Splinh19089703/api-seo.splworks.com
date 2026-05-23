@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Environment (chứa secrets — KHÔNG push)
+.env
+.env.production
+
+# SQLite database (data trên VPS, không push)
+data/
+
+# Uploaded images
+uploads/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+nul
