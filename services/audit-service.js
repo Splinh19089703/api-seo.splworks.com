@@ -7,13 +7,9 @@ const https = require("https");
 // SSL bypass agent for sites with self-signed or expired certs
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
-// Reuse existing scraper modules
-const Crawler = require(
-  path.join(__dirname, "..", "..", "..", "scraper", "src", "crawler"),
-);
-const Analyzer = require(
-  path.join(__dirname, "..", "..", "..", "scraper", "src", "analyzer"),
-);
+// Reuse existing scraper modules (co-located in services/scraper/)
+const Crawler = require("./scraper/crawler");
+const Analyzer = require("./scraper/analyzer");
 
 const crawler = new Crawler();
 const analyzer = new Analyzer();

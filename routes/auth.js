@@ -7,6 +7,14 @@ const licenseClient = require("../services/license-client");
 
 const router = express.Router();
 
+function getBearerToken(req) {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    return authHeader.split(" ")[1];
+  }
+  return null;
+}
+
 /**
  * POST /api/auth/login
  */
@@ -104,14 +112,7 @@ router.get("/me", async (req, res) => {
   }
 
   try {
-    // Get token from header or stored
-    let token = null;
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      token = authHeader.split(" ")[1];
-    } else {
-      token = await licenseClient.getToken();
-    }
+    const token = getBearerToken(req);
 
     if (!token) {
       return res
@@ -153,13 +154,7 @@ router.post("/logout", async (req, res) => {
  */
 router.post("/change-password", async (req, res) => {
   try {
-    let token = null;
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      token = authHeader.split(" ")[1];
-    } else {
-      token = await licenseClient.getToken();
-    }
+    const token = getBearerToken(req);
     if (!token) {
       return res.status(401).json({ error: "Chưa đăng nhập" });
     }
@@ -183,13 +178,7 @@ router.post("/change-password", async (req, res) => {
  */
 router.get("/license-info", async (req, res) => {
   try {
-    let token = null;
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      token = authHeader.split(" ")[1];
-    } else {
-      token = await licenseClient.getToken();
-    }
+    const token = getBearerToken(req);
     if (!token) {
       return res.status(401).json({ error: "Chưa đăng nhập" });
     }
@@ -208,13 +197,7 @@ router.get("/license-info", async (req, res) => {
  */
 router.post("/deactivate-device", async (req, res) => {
   try {
-    let token = null;
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      token = authHeader.split(" ")[1];
-    } else {
-      token = await licenseClient.getToken();
-    }
+    const token = getBearerToken(req);
     if (!token) {
       return res.status(401).json({ error: "Chưa đăng nhập" });
     }
@@ -246,13 +229,7 @@ router.get("/plans", async (req, res) => {
  */
 router.post("/create-order", async (req, res) => {
   try {
-    let token = null;
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      token = authHeader.split(" ")[1];
-    } else {
-      token = await licenseClient.getToken();
-    }
+    const token = getBearerToken(req);
     if (!token) {
       return res.status(401).json({ error: "Chưa đăng nhập" });
     }
@@ -271,13 +248,7 @@ router.post("/create-order", async (req, res) => {
  */
 router.post("/apply-coupon", async (req, res) => {
   try {
-    let token = null;
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      token = authHeader.split(" ")[1];
-    } else {
-      token = await licenseClient.getToken();
-    }
+    const token = getBearerToken(req);
     if (!token) {
       return res.status(401).json({ error: "Chưa đăng nhập" });
     }
@@ -296,13 +267,7 @@ router.post("/apply-coupon", async (req, res) => {
  */
 router.get("/my-orders", async (req, res) => {
   try {
-    let token = null;
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      token = authHeader.split(" ")[1];
-    } else {
-      token = await licenseClient.getToken();
-    }
+    const token = getBearerToken(req);
     if (!token) {
       return res.status(401).json({ error: "Chưa đăng nhập" });
     }

@@ -6,19 +6,11 @@ const aiService = require("../services/ai-service");
 const wpService = require("../services/wp-service");
 const { validateArticle } = require("../services/content-validator");
 
-// Reuse existing modules
-const Crawler = require(
-  path.join(__dirname, "..", "..", "..", "scraper", "src", "crawler"),
-);
-const Analyzer = require(
-  path.join(__dirname, "..", "..", "..", "scraper", "src", "analyzer"),
-);
-const BulkCrawler = require(
-  path.join(__dirname, "..", "..", "..", "scraper", "src", "bulk-crawler"),
-);
-const PromptGenerator = require(
-  path.join(__dirname, "..", "..", "..", "scraper", "src", "prompt-generator"),
-);
+// Reuse existing modules (co-located in services/scraper/)
+const Crawler = require("../services/scraper/crawler");
+const Analyzer = require("../services/scraper/analyzer");
+const BulkCrawler = require("../services/scraper/bulk-crawler");
+const PromptGenerator = require("../services/scraper/prompt-generator");
 
 const crawler = new Crawler();
 const analyzer = new Analyzer();
