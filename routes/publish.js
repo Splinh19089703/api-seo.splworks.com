@@ -116,7 +116,7 @@ router.post("/now", async (req, res) => {
     if (articleType === "project" && projectId) {
       const project = await storage.getByIdForUser("projects", projectId, req.userId);
       if (!project) return res.status(404).json({ error: "Project not found" });
-      const raw = await storage.getById("articles", articleId);
+      const raw = await storage.getByIdForUser("articles", articleId, req.userId);
       if (!raw || raw.projectId !== projectId) return res.status(404).json({ error: "Article not found" });
       article = {
         title: raw.pipeline?.outline?.data?.title || raw.title || raw.keyword,

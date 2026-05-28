@@ -38,8 +38,10 @@ async function getProjectOr404(projectId, res, userId) {
   return project;
 }
 
-async function getProjectOwnedRecordOr404(collection, id, projectId, res, notFound = "Not found") {
-  const item = await storage.getById(collection, id);
+async function getProjectOwnedRecordOr404(collection, id, projectId, res, notFound = "Not found", userId = null) {
+  const item = userId
+    ? await storage.getByIdForUser(collection, id, userId)
+    : await storage.getById(collection, id);
   if (!item || item.projectId !== projectId) {
     res.status(404).json({ error: notFound });
     return null;
@@ -80,7 +82,7 @@ function estimateWordsForPlannerCluster(keywordCount, intent, plannerType) {
 // GET all plans for a project
 router.get("/:projectId/kwplans", async (req, res) => {
   try {
-    const plans = await storage.getAll("kwplans");
+    const plans = await storage.getAllForUser("kwplans", req.userId);
     const filtered = plans.filter((p) => p.projectId === req.params.projectId);
     res.json(filtered);
   } catch (e) {
@@ -91,7 +93,7 @@ router.get("/:projectId/kwplans", async (req, res) => {
 // GET single plan
 router.get("/:projectId/kwplans/:planId", async (req, res) => {
   try {
-    const plan = await storage.getById("kwplans", req.params.planId);
+    const plan = await storage.getByIdForUser("kwplans", req.params.planId, req.userId);
     if (!plan || plan.projectId !== req.params.projectId)
       return res.status(404).json({ error: "Not found" });
     res.json(plan);
@@ -134,7 +136,7 @@ router.post("/:projectId/kwplans", async (req, res) => {
       });
     }
 
-    const plan = await storage.create("kwplans", {
+    const plan = await storage.createForUser("kwplans", {
       projectId: req.params.projectId,
       name: name || "KW Plan",
       description: description || "",
@@ -143,9 +145,9 @@ router.post("/:projectId/kwplans", async (req, res) => {
       originalKeywords: kwList, clusters,
       totalKeywords: kwList.length,
       articlesCreated: 0, articlesPublished: 0,
-    });
+    }, req.userId);
 
-    const plans = await storage.getAll("kwplans");
+    const plans = await storage.getAllForUser("kwplans", req.userId);
     const count = plans.filter((p) => p.projectId === req.params.projectId).length;
     await storage.update("projects", req.params.projectId, { kwPlans: count });
 
@@ -158,7 +160,7 @@ router.post("/:projectId/kwplans", async (req, res) => {
 // POST import keywords from Keyword Planner into a project
 router.post("/:projectId/keywords/import", async (req, res) => {
   try {
-    const project = await storage.getById("projects", req.params.projectId);
+    const project = await storage.getByIdForUser("projects", req.params.projectId, req.userId);
     if (!project) return res.status(404).json({ error: "Không tìm thấy dự án" });
 
     const {
@@ -201,7 +203,7 @@ router.post("/:projectId/keywords/import", async (req, res) => {
       return res.status(400).json({ error: "Không có từ khóa hợp lệ." });
     }
 
-    const imported = await storage.create("project-keywords", {
+    const imported = await storage.createForUser("project-keywords", {
       projectId: req.params.projectId,
       source,
       seedKeyword,
@@ -209,7 +211,7 @@ router.post("/:projectId/keywords/import", async (req, res) => {
       keywords: normalized,
       totalKeywords: normalized.length,
       importedAt: new Date().toISOString(),
-    });
+    }, req.userId);
 
     if (mode !== "kwplan") {
       return res.status(201).json({ import: imported });
@@ -257,7 +259,7 @@ router.post("/:projectId/keywords/import", async (req, res) => {
       };
     });
 
-    const plan = await storage.create("kwplans", {
+    const plan = await storage.createForUser("kwplans", {
       projectId: req.params.projectId,
       name: seedKeyword ? `Keyword Planner: ${seedKeyword}` : "Keyword Planner Import",
       description: `Nhập ${normalized.length} từ khóa từ Keyword Planner.`,
@@ -270,9 +272,9 @@ router.post("/:projectId/keywords/import", async (req, res) => {
       totalKeywords: normalized.length,
       articlesCreated: 0,
       articlesPublished: 0,
-    });
+    }, req.userId);
 
-    const plans = await storage.getAll("kwplans");
+    const plans = await storage.getAllForUser("kwplans", req.userId);
     const count = plans.filter((p) => p.projectId === req.params.projectId).length;
     await storage.update("projects", req.params.projectId, { kwPlans: count });
 
@@ -288,7 +290,7 @@ router.post("/:projectId/keywords/import", async (req, res) => {
 // GET all clustering results for a project
 router.get("/:projectId/clustering", async (req, res) => {
   try {
-    const all = await storage.getAll("clusterings");
+    const all = await storage.getAllForUser("clusterings", req.userId);
     const filtered = all.filter((c) => c.projectId === req.params.projectId);
     res.json(filtered);
   } catch (e) {
@@ -299,7 +301,7 @@ router.get("/:projectId/clustering", async (req, res) => {
 // GET single clustering result
 router.get("/:projectId/clustering/:clusteringId", async (req, res) => {
   try {
-    const item = await storage.getById("clusterings", req.params.clusteringId);
+    const item = await storage.getByIdForUser("clusterings", req.params.clusteringId, req.userId);
     if (!item || item.projectId !== req.params.projectId)
       return res.status(404).json({ error: "Not found" });
     res.json(item);
@@ -362,7 +364,7 @@ router.post("/:projectId/clustering", async (req, res) => {
     }
 
     // Create clustering record immediately
-    const clustering = await storage.create("clusterings", {
+    const clustering = await storage.createForUser("clusterings", {
       projectId: req.params.projectId,
       status: "processing",
       totalKeywords: keywords.length,
@@ -371,7 +373,7 @@ router.post("/:projectId/clustering", async (req, res) => {
       pillars: [],
       progress: { step: 1, message: "Đang phân tích chủ đề lõi (Extracting Pillars)...", percent: 5 },
       createdAt: new Date().toISOString(),
-    });
+    }, req.userId);
 
     res.status(201).json(clustering);
 
@@ -1186,7 +1188,7 @@ Trả về ĐÚNG JSON, KHÔNG markdown:
 // POST save clustering result as a KW Plan
 router.post("/:projectId/clustering/:clusteringId/save-plan", async (req, res) => {
   try {
-    const clustering = await storage.getById("clusterings", req.params.clusteringId);
+    const clustering = await storage.getByIdForUser("clusterings", req.params.clusteringId, req.userId);
     if (!clustering || clustering.projectId !== req.params.projectId)
       return res.status(404).json({ error: "Not found" });
     if (clustering.status !== "done")
@@ -1236,7 +1238,7 @@ router.post("/:projectId/clustering/:clusteringId/save-plan", async (req, res) =
 
     const totalKw = clusters.reduce((s, c) => s + c.keywords.length, 0);
 
-    const plan = await storage.create("kwplans", {
+    const plan = await storage.createForUser("kwplans", {
       projectId: req.params.projectId,
       name: planName || clustering.name || "AI Clustered Plan",
       description: `Auto-generated from AI clustering (${clustering.totalClusters} groups)`,
@@ -1247,13 +1249,13 @@ router.post("/:projectId/clustering/:clusteringId/save-plan", async (req, res) =
       totalKeywords: totalKw,
       articlesCreated: 0,
       articlesPublished: 0,
-    });
+    }, req.userId);
 
     // Update project kwPlans count
 
-    const project = await storage.getById("projects", req.params.projectId);
+    const project = await storage.getByIdForUser("projects", req.params.projectId, req.userId);
     if (project) {
-      const plans = await storage.getAll("kwplans");
+      const plans = await storage.getAllForUser("kwplans", req.userId);
       const count = plans.filter((p) => p.projectId === req.params.projectId).length;
       await storage.update("projects", req.params.projectId, { kwPlans: count });
     }
@@ -1267,7 +1269,7 @@ router.post("/:projectId/clustering/:clusteringId/save-plan", async (req, res) =
 // POST re-generate AI titles for an existing KW Plan
 router.post("/:projectId/kwplans/:planId/generate-titles", async (req, res) => {
   try {
-    const plan = await storage.getById("kwplans", req.params.planId);
+    const plan = await storage.getByIdForUser("kwplans", req.params.planId, req.userId);
     if (!plan || plan.projectId !== req.params.projectId)
       return res.status(404).json({ error: "Plan not found" });
 
@@ -1316,9 +1318,9 @@ router.delete("/:projectId/kwplans/:planId", async (req, res) => {
   try {
     await storage.delete("kwplans", req.params.planId);
 
-    const project = await storage.getById("projects", req.params.projectId);
+    const project = await storage.getByIdForUser("projects", req.params.projectId, req.userId);
     if (project) {
-      const plans = await storage.getAll("kwplans");
+      const plans = await storage.getAllForUser("kwplans", req.userId);
       const count = plans.filter(
         (p) => p.projectId === req.params.projectId,
       ).length;
@@ -1335,7 +1337,7 @@ router.delete("/:projectId/kwplans/:planId", async (req, res) => {
 // ===== Articles =====
 router.get("/:projectId/articles", async (req, res) => {
   try {
-    const articles = await storage.getAll("articles");
+    const articles = await storage.getAllForUser("articles", req.userId);
     const filtered = articles.filter(
       (a) => a.projectId === req.params.projectId,
     );
@@ -1382,7 +1384,7 @@ router.post("/:projectId/articles", async (req, res) => {
 
     const created = [];
     for (const kw of keywords || []) {
-      const article = await storage.create("articles", {
+      const article = await storage.createForUser("articles", {
         projectId: req.params.projectId,
         title: kw.keyword,
         keyword: kw.keyword,
@@ -1406,7 +1408,7 @@ router.post("/:projectId/articles", async (req, res) => {
       created.push(article);
     }
     // Update project article count
-    const allArticles = await storage.getAll("articles");
+    const allArticles = await storage.getAllForUser("articles", req.userId);
     const count = allArticles.filter(
       (a) => a.projectId === req.params.projectId,
     ).length;
@@ -1428,13 +1430,13 @@ router.post("/:projectId/articles/import-wp", async (req, res) => {
     // Resolve WP site for fetching content
     let wpSite = null;
     if (siteId) {
-      const sites = await storage.getAll("wp-sites");
+      const sites = await storage.getAllForUser("wp-sites", req.userId);
       wpSite = sites.find(s => s.id === siteId);
     }
 
     // Check for duplicates — skip WP posts already imported (cross-check articles + drafts)
-    const existingArticles = await storage.getAll("articles");
-    const existingDrafts = await storage.getAll("standalone-drafts");
+    const existingArticles = await storage.getAllForUser("articles", req.userId);
+    const existingDrafts = await storage.getAllForUser("standalone-drafts", req.userId);
     
     // Build sets for fast lookup
     const existingWpIds = new Set(
@@ -1509,7 +1511,7 @@ router.post("/:projectId/articles/import-wp", async (req, res) => {
       const contentText = (postContent).replace(/<[^>]*>/g, "");
       const wordCount = contentText.split(/\s+/).filter(Boolean).length;
 
-      const article = await storage.create("articles", {
+      const article = await storage.createForUser("articles", {
         projectId: req.params.projectId,
         title: post.title || "Untitled",
         keyword,
@@ -1542,7 +1544,7 @@ router.post("/:projectId/articles/import-wp", async (req, res) => {
     }
 
     // Update project article count
-    const allArticles = await storage.getAll("articles");
+    const allArticles = await storage.getAllForUser("articles", req.userId);
     const count = allArticles.filter(
       (a) => a.projectId === req.params.projectId,
     ).length;
@@ -1602,7 +1604,7 @@ router.delete("/:projectId/articles/:articleId", async (req, res) => {
     await storage.delete("articles", articleId);
 
     // 3. Cập nhật count trên project
-    const allArticles = await storage.getAll("articles");
+    const allArticles = await storage.getAllForUser("articles", req.userId);
     const count = allArticles.filter(
       (a) => a.projectId === req.params.projectId,
     ).length;
@@ -1647,7 +1649,7 @@ router.post("/:projectId/articles/:articleId/thumbnail", async (req, res) => {
 
     // Get project info for niche context
 
-    const project = await storage.getById("projects", req.params.projectId);
+    const project = await storage.getByIdForUser("projects", req.params.projectId, req.userId);
     const niche = project?.niche || project?.name || "";
 
     // Build comprehensive content context
@@ -1724,7 +1726,7 @@ Return ONLY the prompt, nothing else.`,
     res.json({ success: true, url: imageUrl, prompt: imagePrompt });
   } catch (error) {
     // Mark as failed
-    const article = await storage.getById("articles", req.params.articleId);
+    const article = await storage.getByIdForUser("articles", req.params.articleId, req.userId);
     if (article) {
       await storage.update("articles", req.params.articleId, {
         pipeline: {
@@ -1743,7 +1745,7 @@ router.post(
   "/:projectId/articles/:articleId/section-images",
   async (req, res) => {
     try {
-      const article = await storage.getById("articles", req.params.articleId);
+      const article = await storage.getByIdForUser("articles", req.params.articleId, req.userId);
       if (!article) return res.status(404).json({ error: "Article not found" });
 
       const outline = article.pipeline?.outline?.data || {};
@@ -1772,7 +1774,7 @@ router.post(
       const articleTitle =
         outline.title || research.suggestedTitle || article.title || keyword;
   
-    const project = await storage.getById("projects", req.params.projectId);
+    const project = await storage.getByIdForUser("projects", req.params.projectId, req.userId);
       const niche = project?.niche || project?.name || "";
 
       // Smart Selection: Pick 3-4 most visual sections instead of all
@@ -1897,7 +1899,7 @@ Return ONLY the prompt.`,
 
       res.json({ success: true, images: sectionImages });
     } catch (error) {
-      const article = await storage.getById("articles", req.params.articleId);
+      const article = await storage.getByIdForUser("articles", req.params.articleId, req.userId);
       if (article) {
         await storage.update("articles", req.params.articleId, {
           pipeline: {
@@ -1944,7 +1946,7 @@ router.post("/:projectId/articles/:articleId/research", async (req, res) => {
 
     // Get project niche for context
 
-    const project = await storage.getById("projects", req.params.projectId);
+    const project = await storage.getByIdForUser("projects", req.params.projectId, req.userId);
     const niche = project?.niche || project?.name || "";
     const suggestedTitle = article.suggestedTitle || article.title || keyword;
 
@@ -2050,7 +2052,7 @@ Trả về ĐÚNG JSON, KHÔNG markdown:
 
     res.json({ success: true, data: researchData });
   } catch (error) {
-    const article = await storage.getById("articles", req.params.articleId);
+    const article = await storage.getByIdForUser("articles", req.params.articleId, req.userId);
     if (article) {
       await storage.update("articles", req.params.articleId, {
         pipeline: {
@@ -2179,7 +2181,7 @@ Chỉ trả JSON.`;
 
     res.json({ success: true, data: outlineData });
   } catch (error) {
-    const article = await storage.getById("articles", req.params.articleId);
+    const article = await storage.getByIdForUser("articles", req.params.articleId, req.userId);
     if (article) {
       await storage.update("articles", req.params.articleId, {
         pipeline: {
@@ -2458,7 +2460,7 @@ ${CREATIVE_RULES}`;
 
     res.json({ success: true, data: contentData, quality: qualityResult });
   } catch (error) {
-    const article = await storage.getById("articles", req.params.articleId);
+    const article = await storage.getByIdForUser("articles", req.params.articleId, req.userId);
     if (article) {
       await storage.update("articles", req.params.articleId, {
         pipeline: {
@@ -2549,7 +2551,7 @@ router.post("/:projectId/articles/:articleId/publish-wp", async (req, res) => {
       });
     }
 
-    const project = await storage.getById("projects", req.params.projectId);
+    const project = await storage.getByIdForUser("projects", req.params.projectId, req.userId);
     const wpConfig = project?.config?.publishing?.wordpress;
     if (!wpConfig || !wpConfig.siteUrl) {
       return res.status(400).json({ error: "Chưa cấu hình WordPress. Vào Settings > Publishing để cấu hình." });
@@ -2614,7 +2616,7 @@ router.post("/:projectId/articles/:articleId/publish-wp", async (req, res) => {
 // ===== YouTube Videos =====
 router.get("/:projectId/videos", async (req, res) => {
   try {
-    const videos = await storage.getAll("videos");
+    const videos = await storage.getAllForUser("videos", req.userId);
     const filtered = videos.filter((v) => v.projectId === req.params.projectId);
     res.json(filtered);
   } catch (e) {
@@ -2637,7 +2639,7 @@ router.post("/:projectId/videos", async (req, res) => {
     for (const url of urlList) {
       // Extract video ID from URL
       const videoId = extractVideoId(url);
-      const video = await storage.create("videos", {
+      const video = await storage.createForUser("videos", {
         projectId: req.params.projectId,
         url,
         videoId,
@@ -2647,11 +2649,11 @@ router.post("/:projectId/videos", async (req, res) => {
         thumbnailUrl: videoId
           ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`
           : null,
-      });
+      }, req.userId);
       created.push(video);
     }
     // Update project video count
-    const allVideos = await storage.getAll("videos");
+    const allVideos = await storage.getAllForUser("videos", req.userId);
     const count = allVideos.filter(
       (v) => v.projectId === req.params.projectId,
     ).length;
@@ -2666,7 +2668,7 @@ router.post("/:projectId/videos", async (req, res) => {
 router.delete("/:projectId/videos/:videoId", async (req, res) => {
   try {
     await storage.delete("videos", req.params.videoId);
-    const allVideos = await storage.getAll("videos");
+    const allVideos = await storage.getAllForUser("videos", req.userId);
     const count = allVideos.filter(
       (v) => v.projectId === req.params.projectId,
     ).length;
@@ -2680,7 +2682,7 @@ router.delete("/:projectId/videos/:videoId", async (req, res) => {
 // ===== Knowledge Base =====
 router.get("/:projectId/knowledgebases", async (req, res) => {
   try {
-    const kbs = await storage.getAll("knowledgebases");
+    const kbs = await storage.getAllForUser("knowledgebases", req.userId);
     const filtered = kbs.filter((k) => k.projectId === req.params.projectId);
     res.json(filtered);
   } catch (e) {
@@ -2690,13 +2692,13 @@ router.get("/:projectId/knowledgebases", async (req, res) => {
 
 router.post("/:projectId/knowledgebases", async (req, res) => {
   try {
-    const kb = await storage.create("knowledgebases", {
+    const kb = await storage.createForUser("knowledgebases", {
       projectId: req.params.projectId,
       name: req.body.name,
       description: req.body.description || "",
       documents: [],
       documentCount: 0,
-    });
+    }, req.userId);
     res.status(201).json(kb);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -2715,7 +2717,7 @@ router.delete("/:projectId/knowledgebases/:kbId", async (req, res) => {
 // ===== Internal Links =====
 router.post("/:projectId/internal-links/scan", async (req, res) => {
   try {
-    const articles = await storage.getAll("articles");
+    const articles = await storage.getAllForUser("articles", req.userId);
     // Include articles with content done OR imported from WP
     const contentReady = articles.filter(
       (a) =>
@@ -2758,7 +2760,7 @@ router.post("/:projectId/internal-links/scan", async (req, res) => {
 router.post("/:projectId/internal-links/apply", async (req, res) => {
   try {
     const maxLinksPerArticle = req.body.maxLinks || 3;
-    const articles = await storage.getAll("articles");
+    const articles = await storage.getAllForUser("articles", req.userId);
     const contentReady = articles.filter(
       (a) =>
         a.projectId === req.params.projectId &&
@@ -2965,7 +2967,7 @@ router.post("/:projectId/internal-links/apply", async (req, res) => {
 // Updates existing WP posts with new content that includes internal links
 router.post("/:projectId/internal-links/push-wp", async (req, res) => {
   try {
-    const articles = await storage.getAll("articles");
+    const articles = await storage.getAllForUser("articles", req.userId);
     const linkedArticles = articles.filter(
       (a) =>
         a.projectId === req.params.projectId &&
@@ -2982,14 +2984,14 @@ router.post("/:projectId/internal-links/push-wp", async (req, res) => {
     }
 
     // Resolve WP site
-    const projects = await storage.getAll("projects");
+    const projects = await storage.getAllForUser("projects", req.userId);
     const project = projects.find((p) => p.id === req.params.projectId);
     const wpSiteId = project?.wpSiteId || req.body.siteId;
     if (!wpSiteId) {
       return res.status(400).json({ error: "Chưa cấu hình WP Site cho dự án" });
     }
 
-    const sites = await storage.getAll("wp-sites");
+    const sites = await storage.getAllForUser("wp-sites", req.userId);
     const site = sites.find((s) => s.id === wpSiteId);
     if (!site) {
       return res.status(404).json({ error: "Không tìm thấy WP Site" });
@@ -3117,14 +3119,14 @@ router.post("/:projectId/articles/:articleId/push-wp", async (req, res) => {
     }
 
     // Resolve WP site
-    const projects = await storage.getAll("projects");
+    const projects = await storage.getAllForUser("projects", req.userId);
     const project = projects.find((p) => p.id === req.params.projectId);
     const wpSiteId = project?.wpSiteId || req.body.siteId;
     if (!wpSiteId) {
       return res.status(400).json({ error: "Chưa cấu hình WP Site cho dự án" });
     }
 
-    const sites = await storage.getAll("wp-sites");
+    const sites = await storage.getAllForUser("wp-sites", req.userId);
     const site = sites.find((s) => s.id === wpSiteId);
     if (!site) return res.status(404).json({ error: "Không tìm thấy WP Site" });
 

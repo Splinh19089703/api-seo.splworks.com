@@ -6,8 +6,18 @@
  */
 const licenseClient = require("../services/license-client");
 
-// Default "unlimited" mock for dev mode
-const DEV_LICENSE = {
+// Admin user IDs from env (comma-separated)
+const ADMIN_USER_IDS = (process.env.ADMIN_USER_IDS || "")
+  .split(",")
+  .map(id => id.trim())
+  .filter(Boolean);
+
+function isAdminUser(userId) {
+  return ADMIN_USER_IDS.includes(userId);
+}
+
+// Default "unlimited" mock for dev mode and admin override
+const UNLIMITED_LICENSE = {
   plan: "unlimited",
   status: "active",
   limits: { maxArticlesPerMonth: 999999, maxProjects: 999999, maxDevices: 99, maxAudits: 999999 },
@@ -26,10 +36,11 @@ const DEV_USAGE = { articlesCreated: 0, articlesPublished: 0, aiCalls: 0 };
 async function licenseGuard(req, res, next) {
   // DEV mode: skip all checks
   if (process.env.DEV_SKIP_AUTH === "true") {
-    req.license = DEV_LICENSE;
+    req.license = UNLIMITED_LICENSE;
     req.usage = DEV_USAGE;
     req.authToken = "dev-token";
     req.userId = "dev-user";
+    req.isAdmin = true;
     return next();
   }
 
@@ -65,7 +76,8 @@ async function licenseGuard(req, res, next) {
     req.usage = result.usage;
     req.authToken = token;
     req.userId = result.userId || "unknown";
-    req.user = { id: req.userId };
+    req.isAdmin = isAdminUser(req.userId);
+    req.user = { id: req.userId, isAdmin: req.isAdmin };
     if (!result.userId || result.userId === "unknown") {
       return res.status(401).json({
         error: "Không xác định được người dùng",
@@ -73,6 +85,13 @@ async function licenseGuard(req, res, next) {
         requireAuth: true,
       });
     }
+
+    // Admin override: unlimited license regardless of actual plan
+    if (req.isAdmin) {
+      req.license = UNLIMITED_LICENSE;
+      req.usage = DEV_USAGE;
+    }
+
     next();
   } catch (error) {
     console.error("[LicenseGuard] Error:", error.error || error.message || error);
@@ -80,11 +99,12 @@ async function licenseGuard(req, res, next) {
     // Optional local-only fallback, disabled by default.
     if (process.env.ALLOW_LICENSE_FALLBACK === "true" && process.env.NODE_ENV !== "production") {
       console.warn("[LicenseGuard] License server unreachable, allowing access in dev mode");
-      req.license = DEV_LICENSE;
+      req.license = UNLIMITED_LICENSE;
       req.usage = DEV_USAGE;
       req.authToken = "fallback-dev-token";
       req.userId = "dev-user";
-      req.user = { id: req.userId };
+      req.isAdmin = true;
+      req.user = { id: req.userId, isAdmin: true };
       return next();
     }
     
@@ -178,4 +198,4 @@ function auditLimitCheck(currentCount) {
   };
 }
 
-module.exports = { licenseGuard, featureGate, articleLimitCheck, projectLimitCheck, auditLimitCheck };
+module.exports = { licenseGuard, featureGate, articleLimitCheck, projectLimitCheck, auditLimitCheck, isAdminUser };

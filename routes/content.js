@@ -136,7 +136,7 @@ async function resolvePrompt(step, project, storage) {
 
 router.post("/drafts/:id/auto-pipeline", async (req, res) => {
   try {
-    const draft = await storage.getById("standalone-drafts", req.params.id);
+    const draft = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
     if (!draft) return res.status(404).json({ error: "Draft not found" });
 
     // --- License: Article limit check ---
@@ -333,7 +333,7 @@ router.post("/drafts/:id/auto-pipeline", async (req, res) => {
         if (autoPublish?.enabled && autoPublish?.siteId) {
           try {
             console.log(`[Auto-Pipeline] ${keyword}: Auto-publish → site ${autoPublish.siteId}`);
-            const wpSites = await storage.getAll("wp-sites");
+            const wpSites = await storage.getAllForUser("wp-sites", req.userId);
             const site = wpSites.find(s => s.id === autoPublish.siteId);
             if (!site) throw new Error("WP site not found: " + autoPublish.siteId);
 
@@ -417,7 +417,7 @@ router.post("/drafts/:id/auto-pipeline", async (req, res) => {
 // ===== T1 — Auto-publish config toggle =====
 router.put("/drafts/:id/auto-publish", async (req, res) => {
   try {
-    const draft = await storage.getById("standalone-drafts", req.params.id);
+    const draft = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
     if (!draft) return res.status(404).json({ error: "Draft not found" });
 
     const { enabled, siteId, status = "draft" } = req.body;
@@ -466,7 +466,7 @@ router.post("/drafts/bulk", async (req, res) => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      await storage.create("standalone-drafts", draft);
+      await storage.createForUser("standalone-drafts", draft, req.userId);
       created.push({ id, keyword });
 
       // Trigger auto-pipeline in background (staggered 500ms apart)
@@ -659,7 +659,7 @@ router.post("/publish", async (req, res) => {
       status,
     } = req.body;
 
-    const site = await storage.getById("wp-sites", wpSiteId);
+    const site = await storage.getByIdForUser("wp-sites", wpSiteId, req.userId);
     if (!site)
       return res.status(404).json({ error: "WordPress site not found" });
 
@@ -739,7 +739,7 @@ router.get("/drafts", async (req, res) => {
 // GET single draft
 router.get("/drafts/:id", async (req, res) => {
   try {
-    const draft = await storage.getById("standalone-drafts", req.params.id);
+    const draft = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
     if (!draft) return res.status(404).json({ error: "Draft not found" });
     res.json(draft);
   } catch (e) {
@@ -780,7 +780,7 @@ router.post("/drafts", async (req, res) => {
 // PUT update draft
 router.put("/drafts/:id", async (req, res) => {
   try {
-    const existing = await storage.getById("standalone-drafts", req.params.id);
+    const existing = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
     if (!existing) return res.status(404).json({ error: "Draft not found" });
     
     const updated = {
@@ -808,18 +808,18 @@ router.delete("/drafts/:id", async (req, res) => {
 // POST convert draft → project article
 router.post("/drafts/:id/to-project", async (req, res) => {
   try {
-    const draft = await storage.getById("standalone-drafts", req.params.id);
+    const draft = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
     if (!draft) return res.status(404).json({ error: "Bản nháp không tồn tại" });
 
     const { projectId } = req.body;
     if (!projectId) return res.status(400).json({ error: "Cần chọn dự án (projectId)" });
 
     // Check project exists
-    const project = await storage.getById("projects", projectId);
+    const project = await storage.getByIdForUser("projects", projectId, req.userId);
     if (!project) return res.status(404).json({ error: "Dự án không tồn tại" });
 
     // Check duplicate by keyword/title
-    const existingArticles = await storage.getAll("articles");
+    const existingArticles = await storage.getAllForUser("articles", req.userId);
     const draftTitle = (draft.pipeline?.outline?.title || draft.keyword || "").toLowerCase().trim();
     const duplicate = existingArticles.find(
       (a) => a.projectId === projectId && (a.title || "").toLowerCase().trim() === draftTitle
@@ -836,7 +836,7 @@ router.post("/drafts/:id/to-project", async (req, res) => {
     const sectionsData = draft.pipeline?.sections || {};
     const wordCount = contentData.wordCount || 0;
 
-    const article = await storage.create("articles", {
+    const article = await storage.createForUser("articles", {
       projectId,
       title: outlineData.title || draft.keyword || "Untitled",
       keyword: draft.keyword || "",
@@ -876,7 +876,7 @@ router.post("/drafts/:id/to-project", async (req, res) => {
     });
 
     // Update project article count
-    const allArticles = await storage.getAll("articles");
+    const allArticles = await storage.getAllForUser("articles", req.userId);
     const count = allArticles.filter((a) => a.projectId === projectId).length;
     await storage.update("projects", projectId, { articles: count });
 
@@ -896,7 +896,7 @@ router.post("/drafts/:id/to-project", async (req, res) => {
 // POST research for standalone draft
 router.post("/drafts/:id/research", async (req, res) => {
   try {
-    const draft = await storage.getById("standalone-drafts", req.params.id);
+    const draft = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
     if (!draft) return res.status(404).json({ error: "Draft not found" });
 
     const keyword = draft.keyword;
@@ -932,7 +932,7 @@ router.post("/drafts/:id/research", async (req, res) => {
     res.json({ success: true, data: research });
   } catch (error) {
     console.error("[Draft-Research] Error:", error.message);
-    const draft = await storage.getById("standalone-drafts", req.params.id);
+    const draft = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
     if (draft) {
       await storage.update("standalone-drafts", req.params.id, {
         pipeline: { ...draft.pipeline, autoStep: "error", error: error.message },
@@ -946,7 +946,7 @@ router.post("/drafts/:id/research", async (req, res) => {
 // POST outline for standalone draft
 router.post("/drafts/:id/outline", async (req, res) => {
   try {
-    const draft = await storage.getById("standalone-drafts", req.params.id);
+    const draft = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
     if (!draft) return res.status(404).json({ error: "Draft not found" });
 
     const keyword = draft.keyword;
@@ -992,7 +992,7 @@ ${research.analysis ? `\n📊 DỮ LIỆU: Đã phân tích ${research.analysis.
     res.json({ success: true, data: outline });
   } catch (error) {
     console.error("[Draft-Outline] Error:", error.message);
-    const draft = await storage.getById("standalone-drafts", req.params.id);
+    const draft = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
     if (draft) {
       await storage.update("standalone-drafts", req.params.id, {
         pipeline: { ...draft.pipeline, autoStep: "error", error: error.message },
@@ -1006,7 +1006,7 @@ ${research.analysis ? `\n📊 DỮ LIỆU: Đã phân tích ${research.analysis.
 // POST content for standalone draft
 router.post("/drafts/:id/content", async (req, res) => {
   try {
-    const draft = await storage.getById("standalone-drafts", req.params.id);
+    const draft = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
     if (!draft) return res.status(404).json({ error: "Draft not found" });
 
     const keyword = draft.keyword;
@@ -1101,7 +1101,7 @@ ${draft.customPrompt ? `📝 HƯỚNG DẪN: ${draft.customPrompt}` : ""}
     res.json({ success: true, data: { html, wordCount, mode }, quality });
   } catch (error) {
     console.error("[Draft-Content] Error:", error.message);
-    const draft = await storage.getById("standalone-drafts", req.params.id);
+    const draft = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
     if (draft) {
       await storage.update("standalone-drafts", req.params.id, {
         pipeline: { ...draft.pipeline, autoStep: "error", error: error.message },
@@ -1115,7 +1115,7 @@ ${draft.customPrompt ? `📝 HƯỚNG DẪN: ${draft.customPrompt}` : ""}
 // POST generate thumbnail for standalone draft
 router.post("/drafts/:id/thumbnail", async (req, res) => {
   try {
-    const draft = await storage.getById("standalone-drafts", req.params.id);
+    const draft = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
     if (!draft) return res.status(404).json({ error: "Draft not found" });
 
     const settings = await storage.getSettings();
@@ -1171,7 +1171,7 @@ Return ONLY the prompt.`,
 
     res.json({ success: true, url: imageUrl, prompt: imagePrompt });
   } catch (error) {
-    const draft = await storage.getById("standalone-drafts", req.params.id);
+    const draft = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
     if (draft) {
       await storage.update("standalone-drafts", req.params.id, {
         pipeline: { ...draft.pipeline, thumbnail: { status: "failed", error: error.message } },
@@ -1186,7 +1186,7 @@ Return ONLY the prompt.`,
 // POST generate section images for standalone draft
 router.post("/drafts/:id/section-images", async (req, res) => {
   try {
-    const draft = await storage.getById("standalone-drafts", req.params.id);
+    const draft = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
     if (!draft) return res.status(404).json({ error: "Draft not found" });
 
     const outline = draft.pipeline?.outline || {};
@@ -1253,7 +1253,7 @@ Return ONLY the prompt.`,
 // POST insert section images into article HTML content
 router.post("/drafts/:id/insert-images", async (req, res) => {
   try {
-    const draft = await storage.getById("standalone-drafts", req.params.id);
+    const draft = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
     if (!draft) return res.status(404).json({ error: "Draft not found" });
 
     const pipeline = draft.pipeline || {};
@@ -1326,7 +1326,7 @@ router.post("/drafts/:id/insert-images", async (req, res) => {
 // PUT set/replace thumbnail URL or base64
 router.put("/drafts/:id/thumbnail-url", async (req, res) => {
   try {
-    const draft = await storage.getById("standalone-drafts", req.params.id);
+    const draft = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
     if (!draft) return res.status(404).json({ error: "Draft not found" });
 
     const { url, base64 } = req.body;
@@ -1353,7 +1353,7 @@ router.put("/drafts/:id/thumbnail-url", async (req, res) => {
 // PUT replace a section image by index
 router.put("/drafts/:id/section-image/:index", async (req, res) => {
   try {
-    const draft = await storage.getById("standalone-drafts", req.params.id);
+    const draft = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
     if (!draft) return res.status(404).json({ error: "Draft not found" });
 
     const idx = parseInt(req.params.index, 10);
@@ -1396,7 +1396,7 @@ router.put("/drafts/:id/section-image/:index", async (req, res) => {
 // POST publish standalone draft to WordPress
 router.post("/drafts/:id/publish-wp", async (req, res) => {
   try {
-    const draft = await storage.getById("standalone-drafts", req.params.id);
+    const draft = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
     if (!draft) return res.status(404).json({ error: "Draft not found" });
 
     const pipeline = draft.pipeline || {};
@@ -1431,10 +1431,10 @@ router.post("/drafts/:id/publish-wp", async (req, res) => {
     const siteId = req.body.siteId;
     let site;
     if (siteId) {
-      site = await storage.getById("wp-sites", siteId);
+      site = await storage.getByIdForUser("wp-sites", siteId, req.userId);
     } else {
       // Fallback: first site with lastTestOk === true
-      const sites = await storage.getAll("wp-sites");
+      const sites = await storage.getAllForUser("wp-sites", req.userId);
       site = sites.find(s => s.lastTestOk === true) || sites[0];
     }
     if (!site) {
@@ -1511,7 +1511,7 @@ router.post("/drafts/:id/publish-wp", async (req, res) => {
 // POST rewrite specific sections of a standalone draft
 router.post("/drafts/:id/rewrite-sections", async (req, res) => {
   try {
-    const draft = await storage.getById("standalone-drafts", req.params.id);
+    const draft = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
     if (!draft) return res.status(404).json({ error: "Draft not found" });
 
     const { sectionIndexes, targetWordCount, customInstructions } = req.body;

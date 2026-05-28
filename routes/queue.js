@@ -54,7 +54,7 @@ async function publishQueueItem(item) {
     thumbnailUrl = pipeline.thumbnail?.url;
   } else if (sourceType === "project-article") {
     // Project article
-    const articles = await storage.getAll("articles");
+    const articles = await storage.getAllForUser("articles", userId);
     const article = articles.find(a => a.id === sourceId);
     const project = article?.projectId
       ? await storage.getByIdForUser("projects", article.projectId, userId)
@@ -202,7 +202,7 @@ router.post("/", async (req, res) => {
       const draft = await storage.getByIdForUser("standalone-drafts", sourceId, req.userId);
       if (!draft) return res.status(404).json({ error: "Draft khÃ´ng tÃ¬m tháº¥y" });
     } else if (sourceType === "project-article") {
-      const article = await storage.getById("articles", sourceId);
+      const article = await storage.getByIdForUser("articles", sourceId, req.userId);
       const project = article?.projectId
         ? await storage.getByIdForUser("projects", article.projectId, req.userId)
         : null;
