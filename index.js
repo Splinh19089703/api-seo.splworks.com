@@ -34,7 +34,7 @@ app.use('/api/uploads/images', express.static(uploadsDir, {
 app.use("/api/auth", require("./routes/auth"));
 
 // ===== License Guard (protect all other routes) =====
-const { licenseGuard } = require("./middleware/license-guard");
+const { licenseGuard, featureGate } = require("./middleware/license-guard");
 app.use("/api/projects", licenseGuard, require("./routes/projects"));
 app.use("/api/projects", licenseGuard, require("./routes/project-content"));
 app.use("/api/settings", licenseGuard, require("./routes/settings"));
@@ -48,7 +48,7 @@ app.use("/api/woo", licenseGuard, require("./routes/woo"));
 app.use("/api/keywords", licenseGuard, require("./routes/keywords"));
 // GSC: callback phải public (Google redirect không gửi Authorization)
 app.get("/api/gsc/callback", require("./routes/gsc").callbackHandler);
-app.use("/api/gsc", licenseGuard, require("./routes/gsc").router);
+app.use("/api/gsc", licenseGuard, featureGate("googleSearchConsole"), require("./routes/gsc").router);
 app.use("/api/affiliate", licenseGuard, require("./routes/affiliate"));
 
 // ===== Webhook (public — plugin authenticates via HMAC signature) =====

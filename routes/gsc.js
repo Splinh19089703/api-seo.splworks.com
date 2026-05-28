@@ -15,7 +15,6 @@ const storage = require("../services/storage");
  * POST /api/gsc/data            — Pull analytics data (clicks, impressions, CTR, position)
  * GET  /api/gsc/top-queries     — Top keywords theo site
  * GET  /api/gsc/top-pages       — Top pages theo site
- * GET  /api/gsc/coverage        — Index coverage status
  */
 
 // ============================================================
@@ -27,6 +26,12 @@ const CACHE_COLLECTION = "gsc-cache";
 const STATE_COLLECTION = "gsc-oauth-states";
 const STATE_TTL_MS = 10 * 60 * 1000;
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 tiếng
+
+function clampInt(value, fallback, min, max) {
+  const n = parseInt(value, 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(Math.max(n, min), max);
+}
 
 /** Client URL for OAuth redirects (production: https://seo.splworks.com) */
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
@@ -172,20 +177,16 @@ router.get("/auth-url", async (req, res) => {
 async function callbackHandler(req, res) {
   const { code, state } = req.query;
   if (!code) {
-    return res.redirect(
-      `${CLIENT_URL}/settings?gsc=error&msg=no_code`
-    );
+    return res.redirect(`${CLIENT_URL}/gsc?gsc=error&msg=no_code`);
   }
   if (!state) {
-    return res.redirect(
-      `${CLIENT_URL}/settings?gsc=error&msg=missing_state`
-    );
+    return res.redirect(`${CLIENT_URL}/gsc?gsc=error&msg=missing_state`);
   }
   try {
     const states = await storage.getAll(STATE_COLLECTION);
     const stateRecord = states.find((item) => item.state === state);
     if (!stateRecord || Date.now() > stateRecord.expiresAt) {
-      return res.redirect(`${CLIENT_URL}/settings?gsc=error&msg=invalid_state`);
+      return res.redirect(`${CLIENT_URL}/gsc?gsc=error&msg=invalid_state`);
     }
     await storage.delete(STATE_COLLECTION, stateRecord.id);
     const userId = stateRecord.userId;
@@ -225,13 +226,12 @@ async function callbackHandler(req, res) {
       email,
     });
 
-    // Redirect về Settings với success
-    res.redirect(`${CLIENT_URL}/settings?gsc=success`);
+    // Redirect về GSC với success
+    res.redirect(`${CLIENT_URL}/gsc?gsc=success`);
   } catch (error) {
     console.error("[GSC] OAuth callback error:", error.message);
-    res.redirect(
-      `${CLIENT_URL}/settings?gsc=error&msg=${encodeURIComponent(error.message)}`
-    );
+    const msg = error.response?.status === 400 ? "invalid_code" : "server_error";
+    res.redirect(`${CLIENT_URL}/gsc?gsc=error&msg=${msg}`);
   }
 }
 
@@ -306,7 +306,8 @@ router.post("/data", async (req, res) => {
     } = req.body;
     if (!siteUrl) return res.status(400).json({ error: "siteUrl là bắt buộc" });
 
-    const cacheKey = `${req.user.id}:gsc:data:${siteUrl}:${startDate}:${endDate}:${dimensions.join(",")}`;
+    const safeRowLimit = clampInt(rowLimit, 100, 1, 1000);
+    const cacheKey = `${req.user.id}:gsc:data:${siteUrl}:${startDate}:${endDate}:${dimensions.join(",")}:${safeRowLimit}`;
     const cached = await getCache(cacheKey);
     if (cached) return res.json({ ...cached, fromCache: true });
 
@@ -317,7 +318,7 @@ router.post("/data", async (req, res) => {
         startDate,
         endDate,
         dimensions,
-        rowLimit,
+        rowLimit: safeRowLimit,
         dataState: "all",
       },
       { headers: { Authorization: `Bearer ${accessToken}` } }
@@ -357,12 +358,12 @@ router.post("/data", async (req, res) => {
                 ((totals.clicks / totals.impressions) * 100).toFixed(2)
               )
             : 0,
-        avgPosition:
-          rows.length > 0
-            ? parseFloat(
-                (rows.reduce((s, r) => s + r.position, 0) / rows.length).toFixed(1)
-              )
-            : 0,
+        avgPosition: (() => {
+          const totalImpr = rows.reduce((s, r) => s + r.impressions, 0);
+          return totalImpr > 0
+            ? parseFloat((rows.reduce((s, r) => s + r.position * r.impressions, 0) / totalImpr).toFixed(1))
+            : 0;
+        })(),
       },
       total: rows.length,
     };
@@ -389,12 +390,14 @@ router.get("/top-queries", async (req, res) => {
     const { siteUrl, days = 28, limit = 50 } = req.query;
     if (!siteUrl) return res.status(400).json({ error: "siteUrl là bắt buộc" });
 
+    const safeDays = clampInt(days, 28, 1, 180);
+    const safeLimit = clampInt(limit, 50, 1, 1000);
     const endDate = new Date().toISOString().split("T")[0];
-    const startDate = new Date(Date.now() - parseInt(days) * 86400000)
+    const startDate = new Date(Date.now() - safeDays * 86400000)
       .toISOString()
       .split("T")[0];
 
-    const cacheKey = `${req.user.id}:gsc:top-queries:${siteUrl}:${days}:${limit}`;
+    const cacheKey = `${req.user.id}:gsc:top-queries:${siteUrl}:${safeDays}:${safeLimit}`;
     const cached = await getCache(cacheKey);
     if (cached) return res.json({ queries: cached, fromCache: true });
 
@@ -405,7 +408,7 @@ router.get("/top-queries", async (req, res) => {
         startDate,
         endDate,
         dimensions: ["query"],
-        rowLimit: parseInt(limit),
+        rowLimit: safeLimit,
         dataState: "all",
       },
       { headers: { Authorization: `Bearer ${accessToken}` } }
@@ -435,12 +438,14 @@ router.get("/top-pages", async (req, res) => {
     const { siteUrl, days = 28, limit = 50 } = req.query;
     if (!siteUrl) return res.status(400).json({ error: "siteUrl là bắt buộc" });
 
+    const safeDays = clampInt(days, 28, 1, 180);
+    const safeLimit = clampInt(limit, 50, 1, 1000);
     const endDate = new Date().toISOString().split("T")[0];
-    const startDate = new Date(Date.now() - parseInt(days) * 86400000)
+    const startDate = new Date(Date.now() - safeDays * 86400000)
       .toISOString()
       .split("T")[0];
 
-    const cacheKey = `${req.user.id}:gsc:top-pages:${siteUrl}:${days}:${limit}`;
+    const cacheKey = `${req.user.id}:gsc:top-pages:${siteUrl}:${safeDays}:${safeLimit}`;
     const cached = await getCache(cacheKey);
     if (cached) return res.json({ pages: cached, fromCache: true });
 
@@ -451,7 +456,7 @@ router.get("/top-pages", async (req, res) => {
         startDate,
         endDate,
         dimensions: ["page"],
-        rowLimit: parseInt(limit),
+        rowLimit: safeLimit,
         dataState: "all",
       },
       { headers: { Authorization: `Bearer ${accessToken}` } }
@@ -481,12 +486,13 @@ router.get("/trend", async (req, res) => {
     const { siteUrl, days = 28 } = req.query;
     if (!siteUrl) return res.status(400).json({ error: "siteUrl là bắt buộc" });
 
+    const safeDays = clampInt(days, 28, 1, 180);
     const endDate = new Date().toISOString().split("T")[0];
-    const startDate = new Date(Date.now() - parseInt(days) * 86400000)
+    const startDate = new Date(Date.now() - safeDays * 86400000)
       .toISOString()
       .split("T")[0];
 
-    const cacheKey = `${req.user.id}:gsc:trend:${siteUrl}:${days}`;
+    const cacheKey = `${req.user.id}:gsc:trend:${siteUrl}:${safeDays}`;
     const cached = await getCache(cacheKey);
     if (cached) return res.json({ trend: cached, fromCache: true });
 
@@ -497,7 +503,7 @@ router.get("/trend", async (req, res) => {
         startDate,
         endDate,
         dimensions: ["date"],
-        rowLimit: parseInt(days),
+        rowLimit: safeDays,
         dataState: "all",
       },
       { headers: { Authorization: `Bearer ${accessToken}` } }
