@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { api } from "../api";
 
@@ -100,6 +100,13 @@ export default function GSC() {
   // Import to Keyword Planner
   const [importing, setImporting] = useState(false);
 
+  // Cache clearing loading state
+  const [cacheClearing, setCacheClearing] = useState(false);
+
+  // Mounted ref to prevent setState after unmount
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
+
   // =====================================================================
   // Init — Check connection status + handle OAuth callback
   // =====================================================================
@@ -177,6 +184,7 @@ export default function GSC() {
         api.gscTrend({ siteUrl: selectedSite, days }),
       ]);
 
+      if (!mountedRef.current) return;
       if (summaryRes.status === "fulfilled") {
         setTotals(summaryRes.value.totals);
       }
@@ -184,14 +192,14 @@ export default function GSC() {
         setTrend(trendRes.value.trend || []);
       }
     } catch (e) {
-      setError("Lỗi tải dữ liệu: " + e.message);
+      if (mountedRef.current) setError("Lỗi tải dữ liệu: " + e.message);
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
 
     // Load table data
     loadTable(activeTab);
-  }, [selectedSite, days]);
+  }, [selectedSite, days, activeTab]);
 
   const loadTable = async (tab) => {
     if (!selectedSite) return;
@@ -199,15 +207,15 @@ export default function GSC() {
     try {
       if (tab === "queries") {
         const { queries: q } = await api.gscTopQueries({ siteUrl: selectedSite, days, limit: 100 });
-        setQueries(q || []);
+        if (mountedRef.current) setQueries(q || []);
       } else {
         const { pages: p } = await api.gscTopPages({ siteUrl: selectedSite, days, limit: 100 });
-        setPages(p || []);
+        if (mountedRef.current) setPages(p || []);
       }
     } catch (e) {
-      setError("Lỗi tải bảng: " + e.message);
+      if (mountedRef.current) setError("Lỗi tải bảng: " + e.message);
     } finally {
-      setTableLoading(false);
+      if (mountedRef.current) setTableLoading(false);
     }
   };
 
@@ -226,20 +234,32 @@ export default function GSC() {
 
   const handleDisconnect = async () => {
     if (!window.confirm("Ngắt kết nối GSC? Toàn bộ cache và token sẽ bị xóa.")) return;
-    await api.gscDisconnect();
-    setConnected(false);
-    setEmail("");
-    setSites([]);
-    setSelectedSite("");
-    setTotals(null);
-    setTrend([]);
-    setQueries([]);
-    setPages([]);
+    try {
+      await api.gscDisconnect();
+      setConnected(false);
+      setEmail("");
+      setSites([]);
+      setSelectedSite("");
+      setTotals(null);
+      setTrend([]);
+      setQueries([]);
+      setPages([]);
+    } catch (e) {
+      setError("Ngắt kết nối thất bại: " + e.message);
+    }
   };
 
   const handleClearCache = async () => {
-    await api.gscClearCache();
-    loadDashboard();
+    if (cacheClearing) return;
+    setCacheClearing(true);
+    try {
+      await api.gscClearCache();
+      loadDashboard();
+    } catch (e) {
+      setError("Xóa cache thất bại: " + e.message);
+    } finally {
+      setCacheClearing(false);
+    }
   };
 
   // =====================================================================
@@ -254,8 +274,9 @@ export default function GSC() {
       const kwList = queries.slice(0, 50).map((q) => ({
         keyword: q.query,
         type: "main",
-        volume: Math.round(q.impressions / 30), // estimate
-        kd: Math.max(0, Math.min(100, Math.round(100 - q.position))),
+        volume: Math.round(q.impressions / 30),
+        _note: "estimated",
+        kd: 0,
         cpc: 0,
         intent: "informational",
         wordCount: q.query.split(/\s+/).length,
@@ -299,7 +320,7 @@ export default function GSC() {
           {/* Impressions line (muted) */}
           <polyline fill="none" stroke="rgba(99,102,241,0.3)" strokeWidth="1.5" points={pts(impressions, maxImpr)} />
           {/* Clicks line (vivid) */}
-          <polyline fill="none" stroke="#6366f1" strokeWidth="2" points={pts(clicks, maxImpr)} />
+          <polyline fill="none" stroke="#6366f1" strokeWidth="2" points={pts(clicks, maxClicks)} />
         </svg>
         <div className="gsc-trend-labels">
           {data.filter((_, i) => i % Math.ceil(data.length / 7) === 0).map((d) => (
@@ -430,8 +451,8 @@ export default function GSC() {
               </button>
             ))}
           </div>
-          <button className="btn btn-sm" onClick={handleClearCache} title="Xóa cache, tải lại data">
-            🔄
+          <button className="btn btn-sm" onClick={handleClearCache} disabled={cacheClearing} title="Xóa cache, tải lại data">
+            {cacheClearing ? "⏳" : "🔄"}
           </button>
           <button className="btn btn-sm" style={{ color: "#ef4444" }} onClick={handleDisconnect}>
             Ngắt kết nối

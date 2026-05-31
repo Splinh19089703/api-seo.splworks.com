@@ -109,7 +109,7 @@ function AppContent() {
             <Route path="/queue" element={<Suspense fallback={<PageLoader />}><Queue /></Suspense>} />
             <Route path="/woo" element={<Suspense fallback={<PageLoader />}><WooProducts /></Suspense>} />
             <Route path="/keyword-planner" element={<Suspense fallback={<PageLoader />}><KeywordPlanner /></Suspense>} />
-            <Route path="/gsc" element={<Suspense fallback={<PageLoader />}><GSC /></Suspense>} />
+            <Route path="/gsc" element={<Suspense fallback={<PageLoader />}><FeatureGate feature="googleSearchConsole"><GSC /></FeatureGate></Suspense>} />
             <Route path="/affiliate" element={<Suspense fallback={<PageLoader />}><Affiliate /></Suspense>} />
             <Route path="*" element={<Navigate to="/" />} />
           </Route>
