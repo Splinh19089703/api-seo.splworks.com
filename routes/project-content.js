@@ -383,7 +383,7 @@ router.post("/:projectId/clustering", async (req, res) => {
       try {
         const aiService = require("../services/ai-service");
         const rawSettings = await storage.getSettings();
-        const apiKeys = await resolveApiKeys(req.userId);
+        const apiKeys = await resolveApiKeys(req.userId, req.license);
 
         // Helper: check if this clustering was cancelled
         const isCancelled = () => cancelledClusterings.has(clustering.id);
@@ -1202,7 +1202,7 @@ router.post("/:projectId/clustering/:clusteringId/save-plan", async (req, res) =
     let titleMap = {};
     try {
       const settings = await storage.getSettings();
-      const apiKeys = await resolveApiKeys(req.userId);
+      const apiKeys = await resolveApiKeys(req.userId, req.license);
       const hasAiKey = apiKeys.some(k =>
         ["openrouter", "gemini", "openai"].includes(k.provider) && k.active && k.apiKey
       );
@@ -1275,7 +1275,7 @@ router.post("/:projectId/kwplans/:planId/generate-titles", async (req, res) => {
       return res.status(404).json({ error: "Plan not found" });
 
     const settings = await storage.getSettings();
-    const apiKeys = await resolveApiKeys(req.userId);
+    const apiKeys = await resolveApiKeys(req.userId, req.license);
 
     const clustersWithVolume = (plan.clusters || []).map(c => ({
       ...c,
@@ -1637,7 +1637,7 @@ router.post("/:projectId/articles/:articleId/thumbnail", async (req, res) => {
     });
 
     const settings = await storage.getSettings();
-    const apiKeys = await resolveApiKeys(req.userId);
+    const apiKeys = await resolveApiKeys(req.userId, req.license);
     const aiService = require("../services/ai-service");
 
     // Gather rich context from article data
@@ -1766,7 +1766,7 @@ router.post(
       });
 
       const settings = await storage.getSettings();
-      const apiKeys = await resolveApiKeys(req.userId);
+      const apiKeys = await resolveApiKeys(req.userId, req.license);
       const aiService = require("../services/ai-service");
 
       // Get context
@@ -1941,7 +1941,7 @@ router.post("/:projectId/articles/:articleId/research", async (req, res) => {
     });
 
     const settings = await storage.getSettings();
-    const apiKeys = await resolveApiKeys(req.userId);
+    const apiKeys = await resolveApiKeys(req.userId, req.license);
     const aiService = require("../services/ai-service");
     const keyword = article.keyword || article.title;
 
@@ -2087,7 +2087,7 @@ router.post("/:projectId/articles/:articleId/outline", async (req, res) => {
     });
 
     const settings = await storage.getSettings();
-    const apiKeys = await resolveApiKeys(req.userId);
+    const apiKeys = await resolveApiKeys(req.userId, req.license);
     const aiService = require("../services/ai-service");
     const keyword = article.keyword || article.title;
     const research = article.pipeline?.research?.data || {};
@@ -2230,7 +2230,7 @@ router.post("/:projectId/articles/:articleId/content", async (req, res) => {
     });
 
     const settings = await storage.getSettings();
-    const apiKeys = await resolveApiKeys(req.userId);
+    const apiKeys = await resolveApiKeys(req.userId, req.license);
     const aiService = require("../services/ai-service");
     const keyword = article.keyword || article.title;
     const research = article.pipeline?.research?.data || {};

@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+const rateLimit = require("express-rate-limit");
 const imageStore = require('./services/image-store');
 
 // Load env (support .env file)
@@ -23,6 +24,18 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "10mb" }));
 
+// ===== Global Rate Limiter (DDoS protection) =====
+const globalLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 200,            // 200 requests per minute per IP
+  message: { error: "Quá nhiều request. Vui lòng thử lại sau.", code: "RATE_LIMIT" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.path === "/api/health" || req.path.startsWith("/api/uploads/"),
+  validate: { xForwardedForHeader: false, default: true },
+});
+app.use("/api", globalLimiter);
+
 // ===== Static: serve AI-generated images (local file storage) =====
 const uploadsDir = path.join(__dirname, 'uploads', 'images');
 app.use('/api/uploads/images', express.static(uploadsDir, {
@@ -35,17 +48,18 @@ app.use("/api/auth", require("./routes/auth"));
 
 // ===== License Guard (protect all other routes) =====
 const { licenseGuard, featureGate } = require("./middleware/license-guard");
+const { aiRateLimiter } = require("./middleware/ai-rate-limiter");
 app.use("/api/projects", licenseGuard, require("./routes/projects"));
 app.use("/api/projects", licenseGuard, require("./routes/project-content"));
 app.use("/api/settings", licenseGuard, require("./routes/settings"));
-app.use("/api/audit", licenseGuard, require("./routes/audit"));
-app.use("/api/content", licenseGuard, require("./routes/content"));
+app.use("/api/audit", licenseGuard, aiRateLimiter, require("./routes/audit"));
+app.use("/api/content", licenseGuard, aiRateLimiter, require("./routes/content"));
 app.use("/api/publish", licenseGuard, require("./routes/publish"));
 app.use("/api/topical-map", licenseGuard, require("./routes/topical-map"));
 app.use("/api/indexer", licenseGuard, require("./routes/indexer"));
 app.use("/api/queue", licenseGuard, require("./routes/queue"));
-app.use("/api/woo", licenseGuard, require("./routes/woo"));
-app.use("/api/keywords", licenseGuard, require("./routes/keywords"));
+app.use("/api/woo", licenseGuard, aiRateLimiter, require("./routes/woo"));
+app.use("/api/keywords", licenseGuard, aiRateLimiter, require("./routes/keywords"));
 // GSC: callback phải public (Google redirect không gửi Authorization)
 app.get("/api/gsc/callback", require("./routes/gsc").callbackHandler);
 app.use("/api/gsc", licenseGuard, featureGate("googleSearchConsole"), require("./routes/gsc").router);
@@ -63,9 +77,18 @@ app.get("/api/health", (req, res) => {
 app.get("/api/dashboard", licenseGuard, async (req, res) => {
   try {
     const storage = require("./services/storage");
+    const { getCreditUsage } = require("./middleware/ai-credit-tracker");
+    const pipelineQueue = require("./services/pipeline-queue");
+
     const projects = await storage.getAllForUser("projects", req.userId);
     const audits = await storage.getAllForUser("audits", req.userId);
     const apiKeys = await storage.getAllForUser("api-keys", req.userId);
+
+    // AI credit usage
+    let aiCredits = null;
+    try {
+      aiCredits = await getCreditUsage(req.userId, req.license);
+    } catch {}
 
     res.json({
       projects: projects.length,
@@ -85,10 +108,29 @@ app.get("/api/dashboard", licenseGuard, async (req, res) => {
       // Include license info for dashboard
       license: req.license || null,
       usage: req.usage || null,
+      aiCredits,
+      pipelineQueue: pipelineQueue.getStatus(),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// ===== AI Credits Endpoint (protected) =====
+app.get("/api/ai-credits", licenseGuard, async (req, res) => {
+  try {
+    const { getCreditUsage } = require("./middleware/ai-credit-tracker");
+    const credits = await getCreditUsage(req.userId, req.license);
+    res.json(credits);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ===== Pipeline Queue Status (protected) =====
+app.get("/api/pipeline-queue", licenseGuard, (req, res) => {
+  const pipelineQueue = require("./services/pipeline-queue");
+  res.json(pipelineQueue.getStatus());
 });
 
 app.listen(PORT, () => {

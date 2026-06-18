@@ -240,7 +240,7 @@ router.post("/:id/ai-analyze", async (req, res) => {
     const pageIssues = (audit.issues || []).filter((i) => i.url === pageUrl);
 
     const settings = await storage.getSettings();
-    const apiKeys = await resolveApiKeys(req.userId);
+    const apiKeys = await resolveApiKeys(req.userId, req.license);
 
     const issuesList = pageIssues
       .map((i) => `- [${i.severity.toUpperCase()}] ${i.type}: ${i.message}`)
@@ -318,7 +318,7 @@ router.post("/:id/ai-meta", async (req, res) => {
     if (!page) return res.status(404).json({ error: "Page not found" });
 
     const settings = await storage.getSettings();
-    const apiKeys = await resolveApiKeys(req.userId);
+    const apiKeys = await resolveApiKeys(req.userId, req.license);
 
     const prompt = `Bạn là chuyên gia SEO. Viết lại Title và Meta Description tối ưu SEO cho trang web sau:
 
@@ -572,7 +572,7 @@ router.post("/rewrite-article", async (req, res) => {
     if (!content) return res.status(400).json({ error: "content is required" });
 
     const settings = await storage.getSettings();
-    const apiKeys = await resolveApiKeys(req.userId);
+    const apiKeys = await resolveApiKeys(req.userId, req.license);
     const aiService = require("../services/ai-service");
     const safeContent = mode === "section" ? limitRewriteText(content, 4000) : content.substring(0, 4000);
     const safeOriginalHtml = mode === "section" ? limitRewriteText(originalHtml || content, 6000) : "";

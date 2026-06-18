@@ -9,11 +9,29 @@ const storage = require("./storage");
 const LICENSE_SERVER_URL =
   process.env.LICENSE_SERVER_URL || "http://localhost:3002";
 
-// In-memory cache for license validation (1 hour TTL)
-let _licenseCache = null;
-let _licenseCacheTime = 0;
-let _licenseCacheKey = null;
-const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+// Dynamic cache TTL by plan — trial checks more frequently to prevent post-expiry usage
+const CACHE_TTL_MAP = {
+  trial:     5 * 60 * 1000,     // 5 minutes (detect expiry quickly)
+  basic:     30 * 60 * 1000,    // 30 minutes
+  pro:       60 * 60 * 1000,    // 1 hour
+  agency:    60 * 60 * 1000,    // 1 hour
+  unlimited: 60 * 60 * 1000,    // 1 hour
+};
+const DEFAULT_CACHE_TTL = 60 * 60 * 1000;
+
+// Per-token cache entries: Map<cacheKey, { data, time, plan }>
+const _licenseCacheMap = new Map();
+
+// Cleanup stale entries every 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of _licenseCacheMap) {
+    const ttl = CACHE_TTL_MAP[entry.plan] || DEFAULT_CACHE_TTL;
+    if (now - entry.time >= ttl) {
+      _licenseCacheMap.delete(key);
+    }
+  }
+}, 10 * 60 * 1000);
 
 /**
  * Make HTTP request to license server
@@ -78,9 +96,7 @@ async function login(email, password) {
   await saveToken(result.token);
   // Auth responses do not include the full /license/validate payload
   // (notably top-level userId). Keep validation cache separate.
-  _licenseCache = null;
-  _licenseCacheTime = 0;
-  _licenseCacheKey = null;
+  _licenseCacheMap.clear();
   return result;
 }
 
@@ -94,9 +110,7 @@ async function googleLogin(idToken, referralCode) {
   await saveToken(result.token);
   // Auth responses do not include the full /license/validate payload
   // (notably top-level userId). Keep validation cache separate.
-  _licenseCache = null;
-  _licenseCacheTime = 0;
-  _licenseCacheKey = null;
+  _licenseCacheMap.clear();
   return result;
 }
 
@@ -110,9 +124,7 @@ async function register(email, password, name, referredBy) {
   await saveToken(result.token);
   // Auth responses do not include the full /license/validate payload
   // (notably top-level userId). Keep validation cache separate.
-  _licenseCache = null;
-  _licenseCacheTime = 0;
-  _licenseCacheKey = null;
+  _licenseCacheMap.clear();
   return result;
 }
 
@@ -123,20 +135,25 @@ async function register(email, password, name, referredBy) {
  */
 async function getMe(token, forceRefresh = false) {
   if (forceRefresh) {
-    _licenseCache = null;
-    _licenseCacheTime = 0;
+    _licenseCacheMap.clear();
   }
   return request("GET", "/auth/me", null, token);
 }
 
 /**
- * Validate license (with caching)
+ * Validate license (with per-entry caching and dynamic TTL)
  */
 async function validateLicense(token, fingerprint, productSlug = "splseo") {
-  // Check cache first
+  // Check cache first (per-token entry with plan-based TTL)
   const cacheKey = `${token}:${productSlug}`;
-  if (_licenseCache && _licenseCacheKey === cacheKey && Date.now() - _licenseCacheTime < CACHE_TTL) {
-    return _licenseCache;
+  const cached = _licenseCacheMap.get(cacheKey);
+  if (cached) {
+    const ttl = CACHE_TTL_MAP[cached.plan] || DEFAULT_CACHE_TTL;
+    if (Date.now() - cached.time < ttl) {
+      return cached.data;
+    }
+    // Expired — remove stale entry
+    _licenseCacheMap.delete(cacheKey);
   }
 
   const result = await request(
@@ -152,9 +169,11 @@ async function validateLicense(token, fingerprint, productSlug = "splseo") {
   );
 
   if (result.valid) {
-    _licenseCache = result;
-    _licenseCacheTime = Date.now();
-    _licenseCacheKey = cacheKey;
+    _licenseCacheMap.set(cacheKey, {
+      data: result,
+      time: Date.now(),
+      plan: result.license?.plan || "trial",
+    });
   }
 
   return result;
@@ -166,7 +185,7 @@ async function validateLicense(token, fingerprint, productSlug = "splseo") {
 async function reportUsage(token, data) {
   const result = await request("POST", "/license/report-usage", data, token);
   // Invalidate cache so next validate gets fresh data
-  _licenseCache = null;
+  _licenseCacheMap.clear();
   return result;
 }
 
@@ -241,15 +260,11 @@ async function clearToken() {
   const settings = await storage.getSettings();
   delete settings._authToken;
   await storage.saveSettings(settings);
-  _licenseCache = null;
-  _licenseCacheTime = 0;
-  _licenseCacheKey = null;
+  _licenseCacheMap.clear();
 }
 
 function clearCache() {
-  _licenseCache = null;
-  _licenseCacheTime = 0;
-  _licenseCacheKey = null;
+  _licenseCacheMap.clear();
 }
 
 module.exports = {
