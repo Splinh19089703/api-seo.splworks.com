@@ -12,6 +12,7 @@ const PLAN_COLORS = {
 const PLAN_TIERS = { trial: 0, basic: 1, pro: 2, agency: 3, unlimited: 4 };
 
 const PLAN_NAMES = {
+  trial: "Trial",
   basic: "Basic",
   pro: "Pro",
   agency: "Agency",
@@ -36,10 +37,17 @@ const FEATURE_LABELS = {
   googleSearchConsole: "Google Search Console",
   prioritySupport: "Hỗ trợ ưu tiên",
   affiliate: "CTV / Affiliate",
+  sharedAiPool: "AI credit dùng chung",
+  bringYourOwnKey: "Thêm API key riêng",
+  priorityAiPool: "Ưu tiên hàng đợi AI",
 };
 
 function formatPrice(amount) {
   return new Intl.NumberFormat("vi-VN").format(amount) + "đ";
+}
+
+function formatLimit(value) {
+  return value >= 999999 ? "∞" : new Intl.NumberFormat("vi-VN").format(value || 0);
 }
 
 function getVietQrUrl(bankInfo) {
@@ -306,6 +314,18 @@ export default function PricingModal({ isOpen = true, onClose }) {
                           <div className="pricing-limit-item">
                             <span>💻</span> {plan.limits.maxDevices} thiết bị
                           </div>
+                          {typeof plan.limits.aiCreditsPerMonth === "number" && (
+                            <div className="pricing-limit-item">
+                              <span>⚡</span>{" "}
+                              {formatLimit(plan.limits.aiCreditsPerMonth)} AI credits/tháng
+                            </div>
+                          )}
+                          {typeof plan.limits.maxUserApiKeys === "number" && (
+                            <div className="pricing-limit-item">
+                              <span>🔑</span>{" "}
+                              {formatLimit(plan.limits.maxUserApiKeys)} API key riêng
+                            </div>
+                          )}
                         </div>
 
                         <div className="pricing-card-features">
@@ -347,11 +367,10 @@ export default function PricingModal({ isOpen = true, onClose }) {
 
                 <div className="pricing-footer">
                   <p>
-                    💡 User tự cung cấp API key AI (Gemini, OpenAI, etc.) —
-                    SPLSEO không tính phí AI.
+                    💡 Trial dùng API chung nên không cần thêm key. Từ Basic trở lên có thể thêm API key riêng; hệ thống ưu tiên key của bạn trước AI credit dùng chung.
                   </p>
                   <p>
-                    🎁 Hỗ trợ mã giảm giá (coupon). Nhập mã ở bước tiếp theo.
+                    🎁 Pro trở lên phù hợp khi cần quota ổn định, nhiều provider và chạy bulk thường xuyên.
                   </p>
                 </div>
               </>

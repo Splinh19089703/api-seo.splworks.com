@@ -50,7 +50,7 @@ async function fetchApi(endpoint, options = {}) {
     // Handle 403 — license limits / feature locks
     if (response.status === 403) {
       const errorData = await response.json().catch(() => ({}));
-      const err = new Error(errorData.error || "Không có quyền truy cập");
+      const err = new Error(errorData.message || errorData.error || "Không có quyền truy cập");
       if (["NO_LICENSE", "LICENSE_EXPIRED", "INVALID_LICENSE"].includes(errorData.code)) {
         window.dispatchEvent(
           new CustomEvent("splseo:license-blocked", { detail: errorData }),

@@ -69,25 +69,29 @@ function ApiKeysSection() {
   }, []);
 
   const handleCreate = async () => {
-    if (editingKey) {
-      // Update existing key
-      await api.updateApiKey(editingKey, { ...form });
-    } else {
-      // Create new key
-      await api.createApiKey({ ...form });
+    try {
+      if (editingKey) {
+        // Update existing key
+        await api.updateApiKey(editingKey, { ...form });
+      } else {
+        // Create new key
+        await api.createApiKey({ ...form });
+      }
+      setShowModal(false);
+      setEditingKey(null);
+      setForm({
+        name: "",
+        provider: "gemini",
+        apiKey: "",
+        dailyLimit: 1500,
+        priority: 1,
+        active: true,
+      });
+      setTestResult(null);
+      api.getApiKeys().then(setKeys);
+    } catch (error) {
+      alert(error.message || "Không thể lưu API key. Vui lòng thử lại.");
     }
-    setShowModal(false);
-    setEditingKey(null);
-    setForm({
-      name: "",
-      provider: "gemini",
-      apiKey: "",
-      dailyLimit: 1500,
-      priority: 1,
-      active: true,
-    });
-    setTestResult(null);
-    api.getApiKeys().then(setKeys);
   };
 
   const handleEdit = (key) => {
@@ -163,7 +167,7 @@ function ApiKeysSection() {
           marginBottom: 16,
         }}
       >
-        Quản lý nhiều API keys với rotation tự động
+        Trial có thể dùng API chung và không cần thêm key. Từ Basic trở lên, bạn có thể thêm API key riêng để tăng quota, chọn provider/model theo nhu cầu; hệ thống luôn ưu tiên key riêng trước AI credit dùng chung.
       </p>
 
       <div className="stat-cards" style={{ marginBottom: 16 }}>
