@@ -25,11 +25,12 @@ async function getLicenseData(req) {
       valid: true,
       license: {
         plan: "unlimited",
-        limits: { maxArticlesPerMonth: 999999, maxProjects: 999999, maxDevices: 99, maxAudits: 999999 },
+        limits: { maxArticlesPerMonth: 999999, maxProjects: 999999, maxDevices: 99, maxAudits: 999999, aiCreditsPerMonth: 50000, maxUserApiKeys: 999999 },
         features: {
           aiWriting: true, aiImage: true, wpPublish: true,
           multiPlatform: true, internalLinks: true, knowledgeBase: true,
           seoAudit: true, googleSearchConsole: true, prioritySupport: true, affiliate: true,
+          sharedAiPool: true, bringYourOwnKey: true, priorityAiPool: true,
         },
       },
       usage: { articlesCreated: 0, articlesPublished: 0, aiCalls: 0 },

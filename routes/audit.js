@@ -3,6 +3,7 @@ const router = express.Router();
 const storage = require("../services/storage");
 const auditService = require("../services/audit-service");
 const { featureGate } = require("../middleware/license-guard");
+const { resolveApiKeys } = require("../services/api-key-pool");
 
 // --- License: Gate entire audit module behind seoAudit feature ---
 router.use(featureGate("seoAudit"));
@@ -52,7 +53,7 @@ router.get("/", async (req, res) => {
 // GET single audit detail
 router.get("/:id", async (req, res) => {
   try {
-    const audit = await storage.getById("audits", req.params.id);
+    const audit = await storage.getByIdForUser("audits", req.params.id, req.userId);
     if (!audit) return res.status(404).json({ error: "Audit not found" });
     res.json(audit);
   } catch (error) {
@@ -142,7 +143,7 @@ router.post("/", async (req, res) => {
 // POST re-crawl audit
 router.post("/:id/recrawl", async (req, res) => {
   try {
-    const audit = await storage.getById("audits", req.params.id);
+    const audit = await storage.getByIdForUser("audits", req.params.id, req.userId);
     if (!audit) return res.status(404).json({ error: "Audit not found" });
 
     // Force-stop if already running
@@ -210,6 +211,8 @@ router.post("/:id/recrawl", async (req, res) => {
 // DELETE audit (always works, even for running audits)
 router.delete("/:id", async (req, res) => {
   try {
+    const audit = await storage.getByIdForUser("audits", req.params.id, req.userId);
+    if (!audit) return res.status(404).json({ error: "Audit not found" });
     // Stop any running crawl for this audit
     if (runningCrawls.has(req.params.id)) {
       runningCrawls.delete(req.params.id);
@@ -224,7 +227,7 @@ router.delete("/:id", async (req, res) => {
 // POST AI analyze page issues
 router.post("/:id/ai-analyze", async (req, res) => {
   try {
-    const audit = await storage.getById("audits", req.params.id);
+    const audit = await storage.getByIdForUser("audits", req.params.id, req.userId);
     if (!audit) return res.status(404).json({ error: "Audit not found" });
 
     const { pageUrl } = req.body;
@@ -237,7 +240,7 @@ router.post("/:id/ai-analyze", async (req, res) => {
     const pageIssues = (audit.issues || []).filter((i) => i.url === pageUrl);
 
     const settings = await storage.getSettings();
-    const apiKeys = await storage.getAll("api-keys");
+    const apiKeys = await resolveApiKeys(req.userId);
 
     const issuesList = pageIssues
       .map((i) => `- [${i.severity.toUpperCase()}] ${i.type}: ${i.message}`)
@@ -307,7 +310,7 @@ Chỉ trả JSON array, không thêm text nào khác. Ưu tiên các vấn đề
 // POST AI generate optimized meta for a page
 router.post("/:id/ai-meta", async (req, res) => {
   try {
-    const audit = await storage.getById("audits", req.params.id);
+    const audit = await storage.getByIdForUser("audits", req.params.id, req.userId);
     if (!audit) return res.status(404).json({ error: "Audit not found" });
 
     const { pageUrl } = req.body;
@@ -315,7 +318,7 @@ router.post("/:id/ai-meta", async (req, res) => {
     if (!page) return res.status(404).json({ error: "Page not found" });
 
     const settings = await storage.getSettings();
-    const apiKeys = await storage.getAll("api-keys");
+    const apiKeys = await resolveApiKeys(req.userId);
 
     const prompt = `Bạn là chuyên gia SEO. Viết lại Title và Meta Description tối ưu SEO cho trang web sau:
 
@@ -362,10 +365,10 @@ Chỉ trả JSON, không text khác.`;
 // GET audits filtered by project domain
 router.get("/by-project/:projectId", async (req, res) => {
   try {
-    const project = await storage.getById("projects", req.params.projectId);
+    const project = await storage.getByIdForUser("projects", req.params.projectId, req.userId);
     if (!project) return res.status(404).json({ error: "Project not found" });
 
-    const audits = await storage.getAll("audits");
+    const audits = await storage.getAllForUser("audits", req.userId);
     const domain = (project.domain || "").replace(/^https?:\/\//, "").replace(/\/$/, "").toLowerCase();
     const filtered = audits
       .filter((a) => {
@@ -401,8 +404,7 @@ router.post("/fetch-article", async (req, res) => {
     // Try WP REST API first if siteId provided
     if (siteId) {
       try {
-        const sites = await storage.getAll("wp-sites");
-        const site = sites.find((s) => s.id === siteId);
+        const site = await storage.getByIdForUser("wp-sites", siteId, req.userId);
         if (site) {
           const siteBase = (site.url || site.siteUrl).replace(/\/$/, "");
           // Extract slug from URL
@@ -570,7 +572,7 @@ router.post("/rewrite-article", async (req, res) => {
     if (!content) return res.status(400).json({ error: "content is required" });
 
     const settings = await storage.getSettings();
-    const apiKeys = await storage.getAll("api-keys");
+    const apiKeys = await resolveApiKeys(req.userId);
     const aiService = require("../services/ai-service");
     const safeContent = mode === "section" ? limitRewriteText(content, 4000) : content.substring(0, 4000);
     const safeOriginalHtml = mode === "section" ? limitRewriteText(originalHtml || content, 6000) : "";
@@ -638,8 +640,7 @@ router.post("/update-article", async (req, res) => {
       return res.status(400).json({ error: "siteId, wpPostId, and content are required" });
     }
 
-    const sites = await storage.getAll("wp-sites");
-    const site = sites.find((s) => s.id === siteId);
+    const site = await storage.getByIdForUser("wp-sites", siteId, req.userId);
     if (!site) return res.status(404).json({ error: "Site not found" });
 
     const siteBase = (site.url || site.siteUrl).replace(/\/$/, "");
@@ -672,8 +673,7 @@ router.post("/update-article", async (req, res) => {
 // GET /api/audit/wp-categories/:siteId — fetch categories for filter dropdown
 router.get("/wp-categories/:siteId", async (req, res) => {
   try {
-    const sites = await storage.getAll("wp-sites");
-    const site = sites.find((s) => s.id === req.params.siteId);
+    const site = await storage.getByIdForUser("wp-sites", req.params.siteId, req.userId);
     if (!site) return res.status(404).json({ error: "Site not found" });
 
     const siteBase = (site.url || site.siteUrl).replace(/\/$/, "");
@@ -707,8 +707,7 @@ router.get("/wp-categories/:siteId", async (req, res) => {
 // GET /api/audit/wp-posts/:siteId?page=1&per_page=20&search=&status=publish&categories=5
 router.get("/wp-posts/:siteId", async (req, res) => {
   try {
-    const sites = await storage.getAll("wp-sites");
-    const site = sites.find((s) => s.id === req.params.siteId);
+    const site = await storage.getByIdForUser("wp-sites", req.params.siteId, req.userId);
     if (!site) return res.status(404).json({ error: "Site not found" });
 
     const siteBase = (site.url || site.siteUrl).replace(/\/$/, "");
@@ -768,8 +767,7 @@ router.get("/wp-posts/:siteId", async (req, res) => {
 // GET /api/audit/wp-posts/:siteId/:postId — fetch single post with parsed sections
 router.get("/wp-posts/:siteId/:postId", async (req, res) => {
   try {
-    const sites = await storage.getAll("wp-sites");
-    const site = sites.find((s) => s.id === req.params.siteId);
+    const site = await storage.getByIdForUser("wp-sites", req.params.siteId, req.userId);
     if (!site) return res.status(404).json({ error: "Site not found" });
 
     const siteBase = (site.url || site.siteUrl).replace(/\/$/, "");

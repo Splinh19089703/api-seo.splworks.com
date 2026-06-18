@@ -5,6 +5,7 @@ const storage = require("../services/storage");
 const aiService = require("../services/ai-service");
 const wpService = require("../services/wp-service");
 const { validateArticle } = require("../services/content-validator");
+const { resolveApiKeys } = require("../services/api-key-pool");
 
 // Reuse existing modules (co-located in services/scraper/)
 const Crawler = require("../services/scraper/crawler");
@@ -25,7 +26,7 @@ router.post("/analyze-keywords", async (req, res) => {
     if (kwList.length === 0) return res.status(400).json({ error: "Cần ít nhất 1 keyword" });
 
     const settings = await storage.getSettings();
-    const apiKeys = await storage.getAll("api-keys");
+    const apiKeys = await resolveApiKeys(req.userId);
 
     const kwText = kwList.map(k => `- ${k}`).join("\n");
 
@@ -117,14 +118,14 @@ Trả về ĐÚNG JSON, KHÔNG markdown:
  * @param {object} storage - storage service
  * @returns {Promise<string|null>} - prompt content, hoặc null nếu dùng hardcode
  */
-async function resolvePrompt(step, project, storage) {
+async function resolvePrompt(step, project, storage, userId) {
   // 1. Project-level prompt
   if (project?.prompts?.[step]?.enabled && project.prompts[step].content?.trim()) {
     return project.prompts[step].content;
   }
   // 2. Global default prompt
   try {
-    const globals = await storage.getAll("prompts");
+    const globals = await storage.getAllForUser("prompts", userId);
     const global = globals.find(p => p.type === step && p.isDefault);
     if (global?.content?.trim()) return global.content;
   } catch {}
@@ -196,13 +197,13 @@ router.post("/drafts/:id/auto-pipeline", async (req, res) => {
         // STEP 2: Outline
         await updateStatus("outline", { autoStep: "outline" });
         const settings = await storage.getSettings();
-        const apiKeys = await storage.getAll("api-keys");
+        const apiKeys = await resolveApiKeys(req.userId);
 
         // Load project prompts nếu draft thuộc project
         const project = draft.projectId
-          ? await storage.getById("projects", draft.projectId).catch(() => null)
+          ? await storage.getByIdForUser("projects", draft.projectId, req.userId).catch(() => null)
           : null;
-        const customOutlinePrompt = await resolvePrompt("outline", project, storage);
+        const customOutlinePrompt = await resolvePrompt("outline", project, storage, req.userId);
         const now = new Date();
         const dateContext = `[Ngữ cảnh: Thông tin cập nhật đến tháng ${now.getMonth() + 1}/${now.getFullYear()}. KHÔNG cần nhắc năm trong tiêu đề hay nội dung trừ khi chủ đề yêu cầu.]`;
 
@@ -231,9 +232,9 @@ router.post("/drafts/:id/auto-pipeline", async (req, res) => {
 
         // STEP 3: Content (mode-aware)
         await updateStatus("content", { autoStep: "content" });
-        const customContentPrompt = await resolvePrompt("content", project, storage);
+        const customContentPrompt = await resolvePrompt("content", project, storage, req.userId);
         // Đọc lại draft để lấy contentConfig (có thể đã được set từ bulk)
-        const freshDraftForConfig = await storage.getById("standalone-drafts", id);
+        const freshDraftForConfig = await storage.getByIdForUser("standalone-drafts", id, req.userId);
         const contentMode = pipelineMode || freshDraftForConfig?.contentConfig?.mode || "basic";
         const contentWordCount = pipelineWordCount || freshDraftForConfig?.contentConfig?.targetWordCount || 2000;
 
@@ -262,7 +263,7 @@ router.post("/drafts/:id/auto-pipeline", async (req, res) => {
           if (draft.customPrompt) writePrompt += `\n\n📝 HƯỚNG DẪN: ${draft.customPrompt}`;
           rawContent = await aiService.generate(writePrompt, settings, { apiKeys });
         } else {
-          const prompts = await storage.getAll("prompts");
+          const prompts = await storage.getAllForUser("prompts", req.userId);
           const styleTemplate = prompts.find(p => p.type === "write-article" && p.isDefault);
           const writePrompt = `Bạn là chuyên gia viết blog SEO tiếng Việt.\n[Ngữ cảnh: Thông tin cập nhật đến tháng ${new Date().getMonth() + 1}/${new Date().getFullYear()}. Viết tự nhiên, KHÔNG nhồi năm vào nội dung trừ khi chủ đề yêu cầu.]\n📌 KEYWORD: ${keyword}\n📏 ĐỘ DÀI: ${contentWordCount}+ từ\n📋 OUTLINE:\n${JSON.stringify(outline, null, 2)}\n${styleTemplate ? `🎭 PHONG CÁCH:\n${styleTemplate.content}` : "🎭 TONE: Thân thiện, tự nhiên."}\n${draft.customPrompt ? `📝 HƯỚNG DẪN: ${draft.customPrompt}` : ""}\n✅ YÊU CẦU: Viết theo outline, mỗi H2 ít nhất 200 từ, keyword trong 100 từ đầu, Format Markdown`;
           rawContent = await aiService.generate(writePrompt, settings, { apiKeys });
@@ -328,7 +329,7 @@ router.post("/drafts/:id/auto-pipeline", async (req, res) => {
         console.log(`[Auto-Pipeline] ${keyword}: ✅ COMPLETE`);
 
         // STEP 7 (optional): Auto-publish if toggle enabled
-        const freshDraft = await storage.getById("standalone-drafts", id);
+        const freshDraft = await storage.getByIdForUser("standalone-drafts", id, req.userId);
         const autoPublish = freshDraft?.autoPublish;
         if (autoPublish?.enabled && autoPublish?.siteId) {
           try {
@@ -540,7 +541,7 @@ router.post("/outline", async (req, res) => {
   try {
     const { keyword, analysis, customInstructions } = req.body;
     const settings = await storage.getSettings();
-    const apiKeys = await storage.getAll("api-keys");
+    const apiKeys = await resolveApiKeys(req.userId);
 
     // Build prompt from research data
     let prompt = `Bạn là chuyên gia SEO #1 Việt Nam. Tạo OUTLINE chi tiết cho bài viết về "${keyword}".
@@ -607,10 +608,10 @@ router.post("/generate", async (req, res) => {
   try {
     const { keyword, outline, style } = req.body;
     const settings = await storage.getSettings();
-    const apiKeys = await storage.getAll("api-keys");
+    const apiKeys = await resolveApiKeys(req.userId);
 
     // Get write prompt template
-    const prompts = await storage.getAll("prompts");
+    const prompts = await storage.getAllForUser("prompts", req.userId);
     const styleTemplate = prompts.find(
       (p) => p.type === "write-article" && p.isDefault,
     );
@@ -798,6 +799,8 @@ router.put("/drafts/:id", async (req, res) => {
 // DELETE draft
 router.delete("/drafts/:id", async (req, res) => {
   try {
+    const existing = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
+    if (!existing) return res.status(404).json({ error: "Draft not found" });
     await storage.delete("standalone-drafts", req.params.id);
     res.json({ success: true });
   } catch (e) {
@@ -952,7 +955,7 @@ router.post("/drafts/:id/outline", async (req, res) => {
     const keyword = draft.keyword;
     const research = draft.pipeline?.research || {};
     const settings = await storage.getSettings();
-    const apiKeys = await storage.getAll("api-keys");
+    const apiKeys = await resolveApiKeys(req.userId);
 
     await storage.update("standalone-drafts", req.params.id, {
       pipeline: { ...draft.pipeline, autoStep: "outline" },
@@ -1012,7 +1015,7 @@ router.post("/drafts/:id/content", async (req, res) => {
     const keyword = draft.keyword;
     const outline = draft.pipeline?.outline || {};
     const settings = await storage.getSettings();
-    const apiKeys = await storage.getAll("api-keys");
+    const apiKeys = await resolveApiKeys(req.userId);
     const mode = req.body.mode || "basic"; // "basic" | "quality"
     const targetWordCount = parseInt(req.body.targetWordCount) || 2000;
 
@@ -1022,7 +1025,7 @@ router.post("/drafts/:id/content", async (req, res) => {
       updatedAt: new Date().toISOString(),
     });
 
-    const prompts = await storage.getAll("prompts");
+    const prompts = await storage.getAllForUser("prompts", req.userId);
     const styleTemplate = prompts.find(p => p.type === "write-article" && p.isDefault);
     let html, wordCount, raw;
 
@@ -1119,7 +1122,7 @@ router.post("/drafts/:id/thumbnail", async (req, res) => {
     if (!draft) return res.status(404).json({ error: "Draft not found" });
 
     const settings = await storage.getSettings();
-    const apiKeys = await storage.getAll("api-keys");
+    const apiKeys = await resolveApiKeys(req.userId);
 
     const keyword = draft.keyword || "";
     const outline = draft.pipeline?.outline || {};
@@ -1196,7 +1199,7 @@ router.post("/drafts/:id/section-images", async (req, res) => {
     }
 
     const settings = await storage.getSettings();
-    const apiKeys = await storage.getAll("api-keys");
+    const apiKeys = await resolveApiKeys(req.userId);
 
     const keyword = draft.keyword || "";
     const articleTitle = outline.title || keyword;
@@ -1525,7 +1528,7 @@ router.post("/drafts/:id/rewrite-sections", async (req, res) => {
     const keyword = draft.keyword;
     const outline = draft.pipeline?.outline || {};
     const settings = await storage.getSettings();
-    const apiKeys = await storage.getAll("api-keys");
+    const apiKeys = await resolveApiKeys(req.userId);
 
     // Parse HTML thành sections bởi <h2>
     const parts = html.split(/(?=<h2[\s>])/i);

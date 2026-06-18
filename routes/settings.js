@@ -4,6 +4,28 @@ const axios = require("axios");
 const storage = require("../services/storage");
 const wpService = require("../services/wp-service");
 const aiService = require("../services/ai-service");
+const { getLicenseData } = require("../middleware/license-middleware");
+
+const API_KEY_LIMITS_BY_PLAN = {
+  trial: 0,
+  basic: 2,
+  pro: 5,
+  agency: 20,
+  unlimited: 999999,
+};
+
+function requireAdmin(req, res) {
+  if (req.isAdmin) return true;
+  res.status(403).json({ error: "Chỉ admin được phép thay đổi cấu hình hệ thống" });
+  return false;
+}
+
+function getApiKeyLimit(license) {
+  if (typeof license?.limits?.maxUserApiKeys === "number") {
+    return license.limits.maxUserApiKeys;
+  }
+  return API_KEY_LIMITS_BY_PLAN[license?.plan] ?? 0;
+}
 
 // GET settings
 router.get("/", async (req, res) => {
@@ -18,6 +40,7 @@ router.get("/", async (req, res) => {
 // PUT update settings
 router.put("/", async (req, res) => {
   try {
+    if (!requireAdmin(req, res)) return;
     const current = await storage.getSettings();
     const updated = { ...current, ...req.body };
     await storage.saveSettings(updated);
@@ -50,6 +73,21 @@ router.get("/api-keys", async (req, res) => {
 
 router.post("/api-keys", async (req, res) => {
   try {
+    const existingKeys = await storage.getAllForUser("api-keys", req.userId);
+    const licenseData = await getLicenseData(req);
+    const maxKeys = req.isAdmin ? 999999 : getApiKeyLimit(licenseData?.license);
+
+    if (maxKeys < 999999 && existingKeys.length >= maxKeys) {
+      return res.status(403).json({
+        error: "LIMIT_EXCEEDED",
+        message: maxKeys <= 0
+          ? "Gói hiện tại dùng AI credit chung và chưa hỗ trợ thêm API key riêng. Vui lòng nâng cấp lên Basic trở lên để thêm key."
+          : `Gói hiện tại chỉ cho phép tối đa ${maxKeys} API key riêng. Vui lòng nâng cấp nếu cần thêm key.`,
+        limit: maxKeys,
+        current: existingKeys.length,
+      });
+    }
+
     const key = await storage.createForUser("api-keys", {
       name: req.body.name,
       provider: req.body.provider,
@@ -379,6 +417,7 @@ router.delete("/prompts/:id", async (req, res) => {
 // Assigns all orphaned records (no userId) to the current logged-in user
 router.post("/migrate-legacy-data", async (req, res) => {
   try {
+    if (!requireAdmin(req, res)) return;
     const targetUserId = req.userId;
     if (!targetUserId || targetUserId === "unknown") {
       return res.status(400).json({ error: "Không xác định được userId. Hãy đăng nhập trước." });
@@ -397,6 +436,7 @@ router.post("/migrate-legacy-data", async (req, res) => {
 // === Clear Cache ===
 router.post("/clear-cache", async (req, res) => {
   try {
+    if (!requireAdmin(req, res)) return;
     const deletedCount = await storage.clearAllCache();
     res.json({ success: true, message: `Đã xóa thành công ${deletedCount} phản hồi lưu trong bộ nhớ đệm.` });
   } catch (error) {
