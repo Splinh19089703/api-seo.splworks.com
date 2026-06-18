@@ -1,5 +1,7 @@
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import api from "../api";
 
 const PLAN_LABELS = {
   trial: "Dùng thử",
@@ -20,6 +22,27 @@ const PLAN_COLORS = {
 export default function UsageWidget() {
   const { license, usage, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const [aiCredits, setAiCredits] = useState(null);
+
+  // Fetch AI credits
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+
+    const fetchCredits = async () => {
+      try {
+        const res = await api.get("/ai-credits");
+        if (!cancelled) setAiCredits(res.data);
+      } catch {
+        // silently fail
+      }
+    };
+
+    fetchCredits();
+    // Refresh every 2 minutes
+    const interval = setInterval(fetchCredits, 2 * 60 * 1000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [isAuthenticated]);
 
   if (!isAuthenticated || !license) return null;
 
@@ -29,6 +52,12 @@ export default function UsageWidget() {
   const maxArticles = license.limits?.maxArticlesPerMonth || 10;
   const usedArticles = usage?.articlesCreated || 0;
   const percent = maxArticles >= 999999 ? 0 : Math.min(100, Math.round((usedArticles / maxArticles) * 100));
+
+  // AI Credits
+  const creditUsed = aiCredits?.used || 0;
+  const creditLimit = aiCredits?.limit || license.limits?.aiCreditsPerMonth || 100;
+  const creditPercent = creditLimit >= 50000 ? 0 : Math.min(100, Math.round((creditUsed / creditLimit) * 100));
+  const showCredits = creditLimit < 50000; // Don't show for unlimited
 
   // Calculate remaining days
   let daysLeft = null;
@@ -58,6 +87,8 @@ export default function UsageWidget() {
           <span className="usage-days" style={{ color: "var(--accent-green)" }}>Vĩnh viễn</span>
         )}
       </div>
+
+      {/* Article usage */}
       {maxArticles < 999999 && (
         <>
           <div className="usage-stats">
@@ -80,6 +111,47 @@ export default function UsageWidget() {
           <span>{usedArticles} bài đã tạo</span>
           <span style={{ color: "var(--accent-green)" }}>∞</span>
         </div>
+      )}
+
+      {/* AI Credits usage */}
+      {showCredits && (
+        <>
+          <div className="usage-stats" style={{ marginTop: "6px" }}>
+            <span style={{ fontSize: "0.75rem", opacity: 0.8 }}>
+              ⚡ {creditUsed} / {creditLimit} credits
+            </span>
+            <span style={{
+              fontSize: "0.75rem",
+              color: creditPercent >= 90 ? "var(--accent-red)" : creditPercent >= 70 ? "var(--accent-amber, #f59e0b)" : "var(--text-muted)"
+            }}>
+              {creditPercent}%
+            </span>
+          </div>
+          <div className="usage-bar" style={{ height: "3px" }}>
+            <div
+              className="usage-bar-fill"
+              style={{
+                width: `${creditPercent}%`,
+                background: creditPercent >= 90
+                  ? "var(--accent-red)"
+                  : creditPercent >= 70
+                    ? "var(--accent-amber, #f59e0b)"
+                    : "var(--accent-blue, #3b82f6)",
+                transition: "width 0.5s ease",
+              }}
+            />
+          </div>
+          {creditPercent >= 90 && (
+            <div style={{
+              fontSize: "0.7rem",
+              color: "var(--accent-red)",
+              marginTop: "4px",
+              textAlign: "center",
+            }}>
+              ⚠️ Sắp hết AI credits
+            </div>
+          )}
+        </>
       )}
     </div>
   );
