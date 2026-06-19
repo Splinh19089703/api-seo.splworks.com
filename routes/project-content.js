@@ -2107,8 +2107,8 @@ KEYWORD: "${keyword}"
 TIÊU ĐỀ (đã duyệt): "${suggestedTitle}"
 SEARCH INTENT: ${research.searchIntent || "informational"}
 CONTENT ANGLE: ${research.contentAngle || article.contentAngle || "guide"}
-TARGET WORD COUNT: ${research.estimatedWords || article.estimatedWords || 2500} từ
-⚠️ GIỚI HẠN SỐ TỪ: Tổng wordCount tất cả sections PHẢI nằm trong khoảng ${Math.round((research.estimatedWords || article.estimatedWords || 2500) * 0.9)} - ${Math.round((research.estimatedWords || article.estimatedWords || 2500) * 1.1)} từ. TUYỆT ĐỐI KHÔNG vượt quá ${Math.round((research.estimatedWords || article.estimatedWords || 2500) * 1.1)} từ.
+TARGET WORD COUNT: ${article.estimatedWords || research.estimatedWords || 2500} từ
+⚠️ GIỚI HẠN SỐ TỪ: Tổng wordCount tất cả sections PHẢI nằm trong khoảng ${Math.round((article.estimatedWords || research.estimatedWords || 2500) * 0.9)} - ${Math.round((article.estimatedWords || research.estimatedWords || 2500) * 1.1)} từ. TUYỆT ĐỐI KHÔNG vượt quá ${Math.round((article.estimatedWords || research.estimatedWords || 2500) * 1.1)} từ.
 
 DỮ LIỆU NGHIÊN CỨU:
 - LSI Keywords: ${lsiKeywords.slice(0, 10).join(", ")}
@@ -2126,7 +2126,7 @@ CHIẾN LƯỢC TẠO DÀN Ý:
 4. LSI keywords → phân bổ tự nhiên vào các sections (ghi rõ LSI nào cho section nào)
 5. Keyword chính PHẢI xuất hiện ở: Section 1, Section 3-4, Section cuối
 6. Mỗi section cần có "actionable takeaway" — reader được gì sau khi đọc?
-7. ⚠️ TỔNG wordCount tất cả sections + subsections PHẢI = ${research.estimatedWords || article.estimatedWords || 2500} từ (±10%). Chia đều wordCount cho sections.
+7. ⚠️ TỔNG wordCount tất cả sections + subsections PHẢI = ${article.estimatedWords || research.estimatedWords || 2500} từ (±10%). Chia đều wordCount cho sections.
 
 Trả về ĐÚNG JSON:
 {
@@ -2150,7 +2150,7 @@ Trả về ĐÚNG JSON:
       ]
     }
   ],
-  "totalEstimatedWords": ${research.estimatedWords || article.estimatedWords || 2500},
+  "totalEstimatedWords": ${article.estimatedWords || research.estimatedWords || 2500},
   "faq": [
     { "question": "Câu hỏi từ People Also Ask?", "answerHint": "Gợi ý trả lời schema-ready" }
   ],
@@ -2160,7 +2160,7 @@ Trả về ĐÚNG JSON:
   }
 }
 
-⚠️ QUAN TRỌNG: Tạo số sections phù hợp để tổng wordCount = ${research.estimatedWords || article.estimatedWords || 2500} từ (±10%). Nếu target thấp (< 2000 từ) → chỉ cần 4-6 sections. Nếu target cao (> 3000 từ) → 8-10 sections.
+⚠️ QUAN TRỌNG: Tạo số sections phù hợp để tổng wordCount = ${article.estimatedWords || research.estimatedWords || 2500} từ (±10%). Nếu target thấp (< 2000 từ) → chỉ cần 4-6 sections. Nếu target cao (> 3000 từ) → 8-10 sections.
 FAQ tối thiểu 5 câu (ưu tiên People Also Ask).
 Chỉ trả JSON.`;
 
@@ -2409,7 +2409,7 @@ ${sectionsText || "Viết tự do theo keyword"}
 FAQ:
 ${(outline.faq || []).map(f => `Q: ${f.question}\nA hint: ${f.answerHint}`).join("\n")}
 
-⚠️ GIỚI HẠN SỐ TỪ CỨNG: Viết CHÍNH XÁC ${outline.totalEstimatedWords || article.estimatedWords || 2500} từ (±10%). TUYỆT ĐỐI KHÔNG vượt quá ${Math.round((outline.totalEstimatedWords || article.estimatedWords || 2500) * 1.1)} từ. Khi đạt giới hạn, kết thúc bài viết ngay — KHÔNG thêm nội dung thừa.
+⚠️ GIỚI HẠN SỐ TỪ CỨNG: Viết CHÍNH XÁC ${article.estimatedWords || outline.totalEstimatedWords || 2500} từ (±10%). TUYỆT ĐỐI KHÔNG vượt quá ${Math.round((article.estimatedWords || outline.totalEstimatedWords || 2500) * 1.1)} từ. Khi đạt giới hạn, kết thúc bài viết ngay — KHÔNG thêm nội dung thừa.
 
 ${CREATIVE_RULES}`;
 
