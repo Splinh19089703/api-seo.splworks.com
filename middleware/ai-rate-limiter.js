@@ -41,11 +41,17 @@ setInterval(() => {
 function aiRateLimiter(req, res, next) {
   // DEV mode bypass
   if (process.env.DEV_SKIP_AUTH === "true") return next();
+  // Admin bypass
+  if (req.isAdmin) return next();
 
   const userId = req.userId;
-  if (!userId) return next(); // No user context, let other middleware handle
+  if (!userId) return next();
 
   const plan = req.license?.plan || "trial";
+
+  // Trial bypass — trial đã bị giới hạn bởi article limit (10 bài) và AI credits (100)
+  // Không cần rate limit per-request, để user trải nghiệm mượt mà → chuyển đổi mua
+  if (plan === "trial") return next();
   const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.trial;
   const now = Date.now();
 
