@@ -3,6 +3,7 @@ const router = express.Router();
 const axios = require("axios");
 const storage = require("../services/storage");
 const aiService = require("../services/ai-service");
+const { resolveApiKeys } = require("../services/api-key-pool");
 
 const COUNTRY_CONFIGS = {
   vn: {
@@ -96,7 +97,7 @@ Trả về JSON array, mỗi item:
 
 Không bịa volume/KD/CPC. CHỈ trả JSON array.`;
 
-    const result = await generateJSON(prompt, req.userId);
+    const result = await generateJSON(prompt, req.userId, req.license);
     const keywords = Array.isArray(result) ? result : (result?.keywords || []);
 
     res.json({
@@ -121,7 +122,7 @@ router.post("/research", async (req, res) => {
 
     const [suggestResult, aiResult] = await Promise.allSettled([
       getGoogleSuggestions(keyword, countryConfig),
-      generateAiKeywords(keyword, countryConfig, niche, req.userId),
+      generateAiKeywords(keyword, countryConfig, niche, req.userId, req.license),
     ]);
 
     const allKeywords = [];
@@ -228,7 +229,7 @@ router.post("/export", async (req, res) => {
   }
 });
 
-async function generateAiKeywords(keyword, countryConfig, niche, userId) {
+async function generateAiKeywords(keyword, countryConfig, niche, userId, license = null) {
   const prompt = `Bạn là chuyên gia SEO Việt Nam. Cho từ khóa SEO: "${keyword}"${niche ? ` (lĩnh vực: ${niche})` : ""}.
 
 Tạo danh sách tối đa 80 từ khóa liên quan, chia thành:
@@ -252,13 +253,13 @@ Trả về JSON array:
 
 CHỈ trả JSON array.`;
 
-  const result = await generateJSON(prompt, userId);
+  const result = await generateJSON(prompt, userId, license);
   return Array.isArray(result) ? result : (result?.keywords || []);
 }
 
-async function generateJSON(prompt, userId) {
+async function generateJSON(prompt, userId, license = null) {
   const settings = await storage.getSettings();
-  const apiKeys = await storage.getAllForUser("api-keys", userId);
+  const apiKeys = await resolveApiKeys(userId, license);
   const text = await aiService.generate(prompt, settings, { apiKeys });
   const parsed = extractJSON(text);
   if (!parsed) throw new Error("AI không trả về JSON hợp lệ");
