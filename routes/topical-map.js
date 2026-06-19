@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const storage = require("../services/storage");
 const aiService = require("../services/ai-service");
+const { resolveApiKeys } = require("../services/api-key-pool");
 
 // ===== Helper: Build AI prompt =====
 function buildPrompt(seedKeyword, language, totalArticles) {
@@ -145,7 +146,7 @@ router.post("/", async (req, res) => {
         console.log(`[TopicalMap] Generating for "${seedKeyword}" (id: ${record.id})`);
 
         const settings = await storage.getSettings();
-        const apiKeys = await storage.getAllForUser("api-keys", req.userId);
+        const apiKeys = await resolveApiKeys(req.userId, req.license);
 
         const prompt = buildPrompt(seedKeyword.trim(), language, totalArticles);
         const aiResult = await aiService.generate(prompt, settings, { apiKeys });
