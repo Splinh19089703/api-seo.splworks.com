@@ -38,6 +38,15 @@ async function resolveApiKeys(userId, license = null) {
   const allKeys = await storage.getAll("api-keys");
   const sharedKeys = activeOnly(allKeys.filter((key) => isSharedKey(key, sharedOwnerIds)));
 
+  // Debug logging (remove after confirming production works)
+  if (sharedKeys.length === 0) {
+    console.warn(`[API-Key-Pool] ⚠️ No shared keys found for user ${userId}`);
+    console.warn(`  → ADMIN_USER_IDS env: "${process.env.ADMIN_USER_IDS || "(not set)"}"`);
+    console.warn(`  → Shared owner IDs: [${sharedOwnerIds.join(", ")}]`);
+    console.warn(`  → Total keys in DB: ${allKeys.length}`);
+    console.warn(`  → Key userIds in DB: [${[...new Set(allKeys.map(k => k.userId))].join(", ")}]`);
+  }
+
   if (sharedKeys.length === 0) return [];
 
   // 3. Tiered access: Priority pool for pro+ users with priorityAiPool feature
