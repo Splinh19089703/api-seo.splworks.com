@@ -2293,8 +2293,17 @@ Chỉ trả HTML content, không markdown, không explanation.`;
 
     if (mode === "quality") {
       // ============ QUALITY MODE: Section-by-section ============
-      console.log(`[Content-Quality] Generating ${(outline.sections || []).length} sections for "${keyword}"...`);
+      const totalTarget = article.estimatedWords || outline.totalEstimatedWords || 2500;
+      const faqCount = (outline.faq || []).length;
+      const introWords = Math.min(250, Math.round(totalTarget * 0.1));
+      const faqWords = faqCount > 0 ? Math.min(faqCount * 60, Math.round(totalTarget * 0.15)) : 0;
+      const sectionsWordBudget = totalTarget - introWords - faqWords;
       const sections = outline.sections || [];
+      const outlineTotalSectionWords = sections.reduce((sum, s) => sum + (s.wordCount || 350), 0);
+      const scaleFactor = outlineTotalSectionWords > 0 ? sectionsWordBudget / outlineTotalSectionWords : 1;
+
+      console.log(`[Content-Quality] Budget: total=${totalTarget}, intro=${introWords}, sectionsBudget=${sectionsWordBudget}, faq=${faqWords}, scale=${scaleFactor.toFixed(2)}`);
+      console.log(`[Content-Quality] Generating ${sections.length} sections for "${keyword}"...`);
       const allLSI = research.lsiKeywords || research.relatedKeywords || [];
       let previousContent = ""; // Context accumulator
 
@@ -2308,7 +2317,7 @@ Target Audience: ${research.targetAudience || "Người đọc Việt Nam"}
 ${targetAudienceObj.painPoints ? `Pain Points: ${targetAudienceObj.painPoints.join("; ")}` : ""}
 
 QUY TẮC:
-- 200-300 từ
+- ${introWords}-${Math.round(introWords * 1.1)} từ (KHÔNG vượt quá ${Math.round(introWords * 1.1)} từ)
 - Keyword chính trong 100 từ đầu
 - Mở đầu bằng hook (tình huống thực tế / số liệu / câu hỏi)
 - Kết thúc bằng câu chuyển tiếp sang nội dung chính
@@ -2338,7 +2347,7 @@ SUBSECTIONS:
 ${subsText || "Không có subsection"}
 ${sec.actionableTip ? `ACTIONABLE TIP: ${sec.actionableTip}` : ""}
 LSI KEYWORDS cho section này: ${sectionLSI.join(", ")}
-⚠️ GIỚI HẠN CỨNG: Viết CHÍNH XÁC ${sec.wordCount || 350} từ (±10%). KHÔNG được vượt quá ${Math.round((sec.wordCount || 350) * 1.1)} từ. Nếu hết nội dung, dừng lại — KHÔNG thêm padding.
+⚠️ GIỚI HẠN CỨNG: Viết CHÍNH XÁC ${Math.round((sec.wordCount || 350) * scaleFactor)} từ (±10%). KHÔNG được vượt quá ${Math.round((sec.wordCount || 350) * scaleFactor * 1.1)} từ. Nếu hết nội dung, dừng lại — KHÔNG thêm padding.
 
 NỘI DUNG ĐÃ VIẾT TRƯỚC ĐÓ (để liên kết mạch lạc):
 "${previousContent.substring(0, 300)}..."
@@ -2372,7 +2381,8 @@ ${outline.faq.map((f, i) => `${i + 1}. ${f.question} — Gợi ý: ${f.answerHin
 
 QUY TẮC:
 - HTML format: <h2>Câu Hỏi Thường Gặp</h2> rồi mỗi QA dùng <h3>Q</h3><p>A</p>
-- Mỗi câu trả lời 50-100 từ, trực tiếp, có giá trị
+- Mỗi câu trả lời tối đa ${Math.round(faqWords / Math.max(faqCount, 1))} từ, trực tiếp, có giá trị\r
+- ⚠️ Tổng FAQ tối đa ${faqWords} từ — KHÔNG viết dài hơn
 - Schema-ready format
 Chỉ trả HTML.`;
 
