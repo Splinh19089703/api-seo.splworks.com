@@ -2307,6 +2307,7 @@ Chỉ trả HTML content, không markdown, không explanation.`;
       const allLSI = research.lsiKeywords || research.relatedKeywords || [];
       let previousContent = ""; // Context accumulator
 
+      const introParagraphs = Math.max(1, Math.ceil(introWords / 75));
       // Section 0: Introduction/Hook
       const introPrompt = `Bạn là copywriter SEO Việt Nam top 1. Viết PHẦN MỞ BÀI cho bài viết.
 
@@ -2316,8 +2317,9 @@ ${contentStrategy.hookStrategy ? `Hook Strategy: ${contentStrategy.hookStrategy}
 Target Audience: ${research.targetAudience || "Người đọc Việt Nam"}
 ${targetAudienceObj.painPoints ? `Pain Points: ${targetAudienceObj.painPoints.join("; ")}` : ""}
 
-QUY TẮC:
-- ${introWords}-${Math.round(introWords * 1.1)} từ (KHÔNG vượt quá ${Math.round(introWords * 1.1)} từ)
+QUY TẮC GIỚI HẠN ĐỘ DÀI:
+- Độ dài mục tiêu: ${introWords}-${Math.round(introWords * 1.1)} từ.
+- ⚠️ Số lượng đoạn văn: Chỉ viết tối đa ${introParagraphs} đoạn văn ngắn (mỗi đoạn từ 2-3 câu). Tuyệt đối không viết lan man, dài dòng.
 - Keyword chính trong 100 từ đầu
 - Mở đầu bằng hook (tình huống thực tế / số liệu / câu hỏi)
 - Kết thúc bằng câu chuyển tiếp sang nội dung chính
@@ -2338,6 +2340,9 @@ Chỉ trả HTML.`;
         const sectionLSI = sec.lsiTargets || allLSI.slice(i * 2, i * 2 + 2);
         const subsText = (sec.subsections || []).map(sub => `  - ${sub.heading}: ${(sub.keyPoints || []).join(", ")}`).join("\n");
 
+        const targetWords = Math.round((sec.wordCount || 350) * scaleFactor);
+        const maxParagraphs = Math.max(2, Math.ceil(targetWords / 75));
+
         const sectionPrompt = `Bạn là copywriter SEO. Viết NỘI DUNG CHI TIẾT cho 1 section.
 
 KEYWORD CHÍNH: "${keyword}"
@@ -2347,7 +2352,12 @@ SUBSECTIONS:
 ${subsText || "Không có subsection"}
 ${sec.actionableTip ? `ACTIONABLE TIP: ${sec.actionableTip}` : ""}
 LSI KEYWORDS cho section này: ${sectionLSI.join(", ")}
-⚠️ GIỚI HẠN CỨNG: Viết CHÍNH XÁC ${Math.round((sec.wordCount || 350) * scaleFactor)} từ (±10%). KHÔNG được vượt quá ${Math.round((sec.wordCount || 350) * scaleFactor * 1.1)} từ. Nếu hết nội dung, dừng lại — KHÔNG thêm padding.
+
+⚠️ GIỚI HẠN ĐỘ DÀI CỨNG:
+- Số từ mục tiêu: Khoảng ${targetWords} từ (±10%).
+- ⚠️ Số lượng đoạn văn: Chỉ viết tối đa ${maxParagraphs} đoạn văn ngắn (mỗi đoạn tối đa 2-4 câu).
+- ⚠️ CỰC KỲ QUAN TRỌNG: Hãy đi thẳng vào nội dung chính, không viết diễn giải dài dòng. Nếu có các subsections, chỉ viết mỗi subsection thành 1 đoạn văn cực kỳ ngắn gọn (1-2 câu).
+- Đạt giới hạn thì kết thúc ngay, không thêm nội dung thừa.
 
 NỘI DUNG ĐÃ VIẾT TRƯỚC ĐÓ (để liên kết mạch lạc):
 "${previousContent.substring(0, 300)}..."
@@ -2405,6 +2415,9 @@ Chỉ trả HTML.`;
         })
         .join("\n\n");
 
+      const totalWordsTarget = article.estimatedWords || outline.totalEstimatedWords || 2500;
+      const targetParagraphsCount = Math.max(5, Math.ceil(totalWordsTarget / 75));
+
       const prompt = `Bạn là copywriter SEO Việt Nam top 1, chuyên viết bài chất lượng cao. Viết bài viết đầy đủ dạng HTML.
 
 Keyword chính: "${keyword}"
@@ -2419,7 +2432,10 @@ ${sectionsText || "Viết tự do theo keyword"}
 FAQ:
 ${(outline.faq || []).map(f => `Q: ${f.question}\nA hint: ${f.answerHint}`).join("\n")}
 
-⚠️ GIỚI HẠN SỐ TỪ CỨNG: Viết CHÍNH XÁC ${article.estimatedWords || outline.totalEstimatedWords || 2500} từ (±10%). TUYỆT ĐỐI KHÔNG vượt quá ${Math.round((article.estimatedWords || outline.totalEstimatedWords || 2500) * 1.1)} từ. Khi đạt giới hạn, kết thúc bài viết ngay — KHÔNG thêm nội dung thừa.
+⚠️ GIỚI HẠN ĐỘ DÀI CỨNG: 
+- Tổng số từ mục tiêu: Khoảng ${totalWordsTarget} từ (±10%).
+- ⚠️ Tổng số đoạn văn: Chỉ viết tối đa khoảng ${targetParagraphsCount} đoạn văn cho toàn bộ bài viết (mỗi đoạn tối đa 3-4 câu).
+- ⚠️ Không viết lan man dài dòng, đi thẳng vào vấn đề của từng heading. Đạt giới hạn thì kết thúc ngay.
 
 ${CREATIVE_RULES}`;
 

@@ -261,11 +261,12 @@ router.post("/drafts/:id/auto-pipeline", async (req, res) => {
           const h2Sections = (outline.outline || []).filter(s => s.tag === "h2");
           const perSectionWords = Math.ceil(contentWordCount / Math.max(h2Sections.length, 1));
           const parts = [];
-          const introP = `Viết phần MỞ ĐẦU (150-200 từ, tiếng Việt) cho bài "${outline.title || keyword}". Keyword "${keyword}" phải trong 50 từ đầu. Format Markdown.`;
+          const introP = `Viết phần MỞ ĐẦU (150-200 từ, tiếng Việt) cho bài "${outline.title || keyword}". Keyword "${keyword}" phải trong 50 từ đầu. Giới hạn: Chỉ viết tối đa 2 đoạn văn ngắn (khoảng 3 câu/đoạn). Format Markdown.`;
           const intro = await aiService.generate(introP, settings, { apiKeys });
           parts.push(intro.trim());
           for (const sec of h2Sections) {
-            const secP = `Viết section "## ${sec.text}" (${perSectionWords} từ, tiếng Việt) cho bài "${outline.title || keyword}". ${sec.hint ? `Gợi ý: ${sec.hint}` : ""} Format Markdown, bắt đầu bằng ## heading.`;
+            const maxParagraphs = Math.max(2, Math.ceil(perSectionWords / 75));
+            const secP = `Viết section "## ${sec.text}" cho bài "${outline.title || keyword}". Gợi ý: ${sec.hint || ""}. Giới hạn cứng: Chỉ viết tối đa ${maxParagraphs} đoạn văn ngắn (mỗi đoạn 2-4 câu). Không viết lan man. Format Markdown, bắt đầu bằng ## heading.`;
             try { parts.push((await aiService.generate(secP, settings, { apiKeys })).trim()); } catch { parts.push(`## ${sec.text}\n\nNội dung đang được cập nhật.`); }
           }
           if (outline.faq?.length > 0) {
@@ -282,7 +283,8 @@ router.post("/drafts/:id/auto-pipeline", async (req, res) => {
         } else {
           const prompts = await storage.getAllForUser("prompts", req.userId);
           const styleTemplate = prompts.find(p => p.type === "write-article" && p.isDefault);
-          const writePrompt = `Bạn là chuyên gia viết blog SEO tiếng Việt.\n[Ngữ cảnh: Thông tin cập nhật đến tháng ${new Date().getMonth() + 1}/${new Date().getFullYear()}. Viết tự nhiên, KHÔNG nhồi năm vào nội dung trừ khi chủ đề yêu cầu.]\n📌 KEYWORD: ${keyword}\n📏 ĐỘ DÀI: ${contentWordCount}+ từ\n📋 OUTLINE:\n${JSON.stringify(outline, null, 2)}\n${styleTemplate ? `🎭 PHONG CÁCH:\n${styleTemplate.content}` : "🎭 TONE: Thân thiện, tự nhiên."}\n${draft.customPrompt ? `📝 HƯỚNG DẪN: ${draft.customPrompt}` : ""}\n✅ YÊU CẦU: Viết theo outline, mỗi H2 ít nhất 200 từ, keyword trong 100 từ đầu, Format Markdown`;
+          const targetParagraphsCount = Math.max(5, Math.ceil(contentWordCount / 75));
+          const writePrompt = `Bạn là chuyên gia viết blog SEO tiếng Việt.\n[Ngữ cảnh: Thông tin cập nhật đến tháng ${new Date().getMonth() + 1}/${new Date().getFullYear()}. Viết tự nhiên, KHÔNG nhồi năm vào nội dung trừ khi chủ đề yêu cầu.]\n📌 KEYWORD: ${keyword}\n📏 ĐỘ DÀI MỤC TIÊU: Khoảng ${contentWordCount} từ. ⚠️ Giới hạn tối đa ${targetParagraphsCount} đoạn văn cho toàn bài. Không viết lan man dài dòng.\n📋 OUTLINE:\n${JSON.stringify(outline, null, 2)}\n${styleTemplate ? `🎭 PHONG CÁCH:\n${styleTemplate.content}` : "🎭 TONE: Thân thiện, tự nhiên."}\n${draft.customPrompt ? `📝 HƯỚNG DẪN: ${draft.customPrompt}` : ""}\n✅ YÊU CẦU: Viết theo outline, mỗi H2 ít nhất 200 từ, keyword trong 100 từ đầu, Format Markdown`;
           rawContent = await aiService.generate(writePrompt, settings, { apiKeys });
         }
 
@@ -1062,14 +1064,18 @@ router.post("/drafts/:id/content", async (req, res) => {
 
       // Intro
       const introPrompt = `Viết phần MỞ ĐẦU (150-200 từ, tiếng Việt) cho bài "${outline.title || keyword}".
-Keyword "${keyword}" phải xuất hiện trong 50 từ đầu. Kết thúc dẫn dắt vào nội dung. Format Markdown.`;
+Keyword "${keyword}" phải xuất hiện trong 50 từ đầu. Kết thúc dẫn dắt vào nội dung. Giới hạn độ dài: Chỉ viết tối đa 2 đoạn văn ngắn (khoảng 3 câu mỗi đoạn). Format Markdown.`;
       const intro = await aiService.generate(introPrompt, settings, { apiKeys });
       parts.push(intro.trim());
 
       // Mỗi H2 section
       for (const sec of h2Sections) {
         const hints = (outline.outline || []).filter(s => s.tag === "h3" && s.parent === h2Sections.indexOf(sec)).map(s => `- ${s.text}`).join("\n");
-        const secPrompt = `Viết section "## ${sec.text}" (${perSectionWords} từ, tiếng Việt) cho bài "${outline.title || keyword}".
+        const maxParagraphs = Math.max(2, Math.ceil(perSectionWords / 75));
+        const secPrompt = `Viết section "## ${sec.text}" cho bài "${outline.title || keyword}".
+- Độ dài mục tiêu: Khoảng ${perSectionWords} từ.
+- ⚠️ Số lượng đoạn văn: Chỉ viết tối đa ${maxParagraphs} đoạn văn ngắn (mỗi đoạn từ 2-4 câu).
+- ⚠️ Không viết lan man, dài dòng, đi thẳng vào ý chính.
 ${sec.hint ? `Gợi ý: ${sec.hint}` : ""}
 ${hints ? `Sub-sections:\n${hints}` : ""}
 ${styleTemplate ? `Phong cách: ${styleTemplate.content.slice(0, 200)}` : ""}
@@ -1096,10 +1102,11 @@ Format Markdown, bắt đầu bằng ## heading.`;
       raw = parts.join("\n\n");
     } else {
       // Basic mode: 1 prompt
+      const targetParagraphsCount = Math.max(5, Math.ceil(targetWordCount / 75));
       const writePrompt = `Bạn là chuyên gia viết blog SEO tiếng Việt.
 [Ngữ cảnh: Thông tin cập nhật đến tháng ${new Date().getMonth() + 1}/${new Date().getFullYear()}. Viết tự nhiên, KHÔNG nhồi năm vào nội dung trừ khi chủ đề yêu cầu.]
 📌 KEYWORD: ${keyword}
-📏 ĐỘ DÀI: ${targetWordCount}+ từ
+📏 ĐỘ DÀI MỤC TIÊU: Khoảng ${targetWordCount} từ. ⚠️ Giới hạn tối đa ${targetParagraphsCount} đoạn văn cho toàn bài. Không viết lan man dài dòng.
 📋 OUTLINE:\n${JSON.stringify(outline, null, 2)}
 ${styleTemplate ? `🎭 PHONG CÁCH:\n${styleTemplate.content}` : "🎭 TONE: Thân thiện, tự nhiên."}
 ${draft.customPrompt ? `📝 HƯỚNG DẪN: ${draft.customPrompt}` : ""}
