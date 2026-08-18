@@ -2317,13 +2317,13 @@ ${contentStrategy.hookStrategy ? `Hook Strategy: ${contentStrategy.hookStrategy}
 Target Audience: ${research.targetAudience || "Người đọc Việt Nam"}
 ${targetAudienceObj.painPoints ? `Pain Points: ${targetAudienceObj.painPoints.join("; ")}` : ""}
 
-QUY TẮC GIỚI HẠN ĐỘ DÀI:
-- Độ dài mục tiêu: ${introWords}-${Math.round(introWords * 1.1)} từ.
-- ⚠️ Số lượng đoạn văn: Chỉ viết tối đa ${introParagraphs} đoạn văn ngắn (mỗi đoạn từ 2-3 câu). Tuyệt đối không viết lan man, dài dòng.
-- Keyword chính trong 100 từ đầu
-- Mở đầu bằng hook (tình huống thực tế / số liệu / câu hỏi)
-- Kết thúc bằng câu chuyển tiếp sang nội dung chính
-- Viết HTML (<p>, <strong>, <em>), KHÔNG <h1>, KHÔNG <h2>
+QUY TẮC E-E-A-T & ĐỘ DÀI:
+- Độ dài mục tiêu: Tối thiểu ${introWords} từ (khoảng 200-250 từ).
+- Keyword chính "${keyword}" xuất hiện tự nhiên trong 50 từ đầu tiên.
+- Mở đầu bằng hook lôi cuốn (insight thực chiến / số liệu ấn tượng / tình huống thực tế).
+- Nêu bật lợi ích và giá trị cốt lõi bài viết đem lại.
+- Kết thúc bằng câu chuyển tiếp mượt mà sang nội dung chính.
+- Viết HTML (<p>, <strong>, <em>), KHÔNG <h1>, KHÔNG <h2>.
 Chỉ trả HTML.`;
 
       try {
@@ -2340,10 +2340,11 @@ Chỉ trả HTML.`;
         const sectionLSI = sec.lsiTargets || allLSI.slice(i * 2, i * 2 + 2);
         const subsText = (sec.subsections || []).map(sub => `  - ${sub.heading}: ${(sub.keyPoints || []).join(", ")}`).join("\n");
 
-        const targetWords = Math.round((sec.wordCount || 350) * scaleFactor);
-        const maxParagraphs = Math.max(2, Math.ceil(targetWords / 75));
+        const targetWords = Math.max(180, Math.round((sec.wordCount || 300) * scaleFactor));
+        const minSectionWords = Math.round(targetWords * 0.85);
+        const maxSectionWords = Math.round(targetWords * 1.15);
 
-        const sectionPrompt = `Bạn là copywriter SEO. Viết NỘI DUNG CHI TIẾT cho 1 section.
+        const sectionPrompt = `Bạn là chuyên gia Content SEO E-E-A-T hàng đầu. Viết NỘI DUNG CHUYÊN SÂU cho 1 section.
 
 KEYWORD CHÍNH: "${keyword}"
 SECTION: ${sec.heading}
@@ -2353,20 +2354,19 @@ ${subsText || "Không có subsection"}
 ${sec.actionableTip ? `ACTIONABLE TIP: ${sec.actionableTip}` : ""}
 LSI KEYWORDS cho section này: ${sectionLSI.join(", ")}
 
-⚠️ GIỚI HẠN ĐỘ DÀI CỨNG:
-- Số từ mục tiêu: Khoảng ${targetWords} từ (±10%).
-- ⚠️ Số lượng đoạn văn: Chỉ viết tối đa ${maxParagraphs} đoạn văn ngắn (mỗi đoạn tối đa 2-4 câu).
-- ⚠️ CỰC KỲ QUAN TRỌNG: Hãy đi thẳng vào nội dung chính, không viết diễn giải dài dòng. Nếu có các subsections, chỉ viết mỗi subsection thành 1 đoạn văn cực kỳ ngắn gọn (1-2 câu).
-- Đạt giới hạn thì kết thúc ngay, không thêm nội dung thừa.
+⭐ TIÊU CHUẨN E-E-A-T & ĐỘ DÀI PHÂN BỔ:
+- Dung lượng mục tiêu: Khoảng ${targetWords} từ (tối thiểu ${minSectionWords} từ, tối đa ${maxSectionWords} từ).
+- ⚠️ QUAN TRỌNG: Viết sâu sắc, súc tích, giải thích đúng trọng tâm. Không viết lan man vượt quá ${maxSectionWords} từ.
+- 1. Phân tích chi tiết, giải thích rõ nguyên lý và quy trình thực chiến.
+- 2. BẮT BUỘC có ít nhất 1 <blockquote> với lưu ý chuyên gia/mẹo thực chiến (> 💡 **Lưu ý chuyên gia:** ...).
+- 3. BẮT BUỘC có Bảng biểu so sánh (HTML <table>) hoặc danh sách nếu có phân loại/thông số.
+- 4. Chèn LSI keywords tự nhiên và chính xác.
 
 NỘI DUNG ĐÃ VIẾT TRƯỚC ĐÓ (để liên kết mạch lạc):
 "${previousContent.substring(0, 300)}..."
 
 QUY TẮC:
-- Viết HTML: <h2> cho heading chính, <h3> cho subsections, <p>, <ul>, <ol>, <strong>, <blockquote>
-- PHẢI có ít nhất 1 <blockquote> với tip/mẹo thực tế
-- Chèn LSI keywords tự nhiên
-- Có internal link placeholder nếu phù hợp
+- Viết HTML: <h2> cho heading chính, <h3> cho subsections, <p>, <ul>, <ol>, <strong>, <blockquote>, <table>
 - Kết thúc section bằng 1 câu chuyển tiếp
 Chỉ trả HTML.`;
 
@@ -2416,26 +2416,27 @@ Chỉ trả HTML.`;
         .join("\n\n");
 
       const totalWordsTarget = article.estimatedWords || outline.totalEstimatedWords || 2500;
-      const targetParagraphsCount = Math.max(5, Math.ceil(totalWordsTarget / 75));
 
-      const prompt = `Bạn là copywriter SEO Việt Nam top 1, chuyên viết bài chất lượng cao. Viết bài viết đầy đủ dạng HTML.
+      const prompt = `Bạn là chuyên gia Content SEO E-E-A-T #1 Việt Nam. Viết bài viết toàn diện, chuyên sâu chuẩn E-E-A-T dưới dạng HTML hoàn chỉnh.
 
-Keyword chính: "${keyword}"
-Title: ${outline.title || article.title}
-Target Audience: ${research.targetAudience || "Người đọc Việt Nam"}
-LSI Keywords cần chèn tự nhiên: ${(research.lsiKeywords || research.relatedKeywords || []).join(", ")}
-${contentStrategy.uniqueAngle ? `Unique Angle: ${contentStrategy.uniqueAngle}` : ""}
+📌 TỪ KHÓA CHÍNH: "${keyword}"
+📌 TIÊU ĐỀ BÀI VIẾT: ${outline.title || article.title}
+🎯 ĐỐI TƯỢNG ĐỌC: ${research.targetAudience || "Người đọc Việt Nam"}
+🔑 LSI KEYWORDS: ${(research.lsiKeywords || research.relatedKeywords || []).join(", ")}
+${contentStrategy.uniqueAngle ? `GÓC TIẾP CẬN ĐỘC ĐÁO: ${contentStrategy.uniqueAngle}` : ""}
 
-DÀN Ý:
+📋 DÀN Ý BẮT BUỘC TRIỂN KHAI ĐẦY ĐỦ CÁC HEADING:
 ${sectionsText || "Viết tự do theo keyword"}
 
-FAQ:
+❓ FAQ:
 ${(outline.faq || []).map(f => `Q: ${f.question}\nA hint: ${f.answerHint}`).join("\n")}
 
-⚠️ GIỚI HẠN ĐỘ DÀI CỨNG: 
-- Tổng số từ mục tiêu: Khoảng ${totalWordsTarget} từ (±10%).
-- ⚠️ Tổng số đoạn văn: Chỉ viết tối đa khoảng ${targetParagraphsCount} đoạn văn cho toàn bộ bài viết (mỗi đoạn tối đa 3-4 câu).
-- ⚠️ Không viết lan man dài dòng, đi thẳng vào vấn đề của từng heading. Đạt giới hạn thì kết thúc ngay.
+⭐ TIÊU CHUẨN E-E-A-T & ĐỘ DÀI BẮT BUỘC:
+- TỔNG SỐ TỪ: TỐI THIỂU ${totalWordsTarget} TỪ (Tuyệt đối không viết ngắn hoặc tóm tắt sơ sài).
+- Keyword chính xuất hiện trong 50-100 từ đầu tiên.
+- Phân tích chi tiết từng heading, giải thích rõ nguyên lý thực tiễn, chia sẻ kinh nghiệm thực tế.
+- BẮT BUỘC có ít nhất 1-2 Bảng so sánh (HTML <table>), các danh sách <ul>/<ol>, và các khối trích dẫn lưu ý (> <blockquote>).
+- Kết thúc bằng FAQ Schema và Kết luận kêu gọi hành động (CTA).
 
 ${CREATIVE_RULES}`;
 

@@ -5,13 +5,25 @@ const imageStore = require('./image-store');
 
 class WpService {
   /**
+   * Helper cho axios headers với User-Agent chuẩn
+   */
+  _headers(customHeaders = {}) {
+    return {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 SPLSEO/1.0",
+      ...customHeaders,
+    };
+  }
+
+  /**
    * Test WordPress connection
    */
   async testConnection(config) {
     try {
-      const url = await this._resolveWpUrl(config.siteUrl, "/wp/v2/posts?per_page=1");
+      const cleanPass = (config.appPassword || '').replace(/\s+/g, '');
+      const url = await this._resolveWpUrl(config.siteUrl, "/wp/v2/categories?per_page=1");
       const response = await axios.get(url, {
-        auth: { username: config.username, password: config.appPassword },
+        auth: { username: config.username, password: cleanPass },
+        headers: this._headers(),
         timeout: 10000,
       });
       return { success: true, message: "Kết nối thành công!" };
@@ -24,12 +36,13 @@ class WpService {
    * Sync categories from WordPress
    */
   async syncCategories(config) {
+    const cleanPass = (config.appPassword || '').replace(/\s+/g, '');
     const url = await this._resolveWpUrl(config.siteUrl, "/wp/v2/categories?per_page=100");
     const response = await axios.get(url, {
-      auth: { username: config.username, password: config.appPassword },
+      auth: { username: config.username, password: cleanPass },
+      headers: this._headers(),
       timeout: 10000,
-    },
-    );
+    });
     return response.data.map((cat) => ({
       id: cat.id,
       name: cat.name,
@@ -42,6 +55,7 @@ class WpService {
    * Publish article to WordPress
    */
   async publish(config, article) {
+    const cleanPass = (config.appPassword || '').replace(/\s+/g, '');
     const postData = {
       title: article.title,
       content: article.content,
@@ -83,10 +97,10 @@ class WpService {
 
     const url = await this._resolveWpUrl(config.siteUrl, "/wp/v2/posts");
     const response = await axios.post(url, postData, {
-      auth: { username: config.username, password: config.appPassword },
+      auth: { username: config.username, password: cleanPass },
+      headers: this._headers({ "Content-Type": "application/json" }),
       timeout: 30000,
-    },
-    );
+    });
 
     return {
       id: response.data.id,
@@ -160,19 +174,20 @@ class WpService {
     const qs = queryPart ? `&${queryPart}` : "";
     
     const candidates = [
+      `${base}/?rest_route=${pathPart}${qs}`,
       `${base}/wp-json${pathPart}${queryPart ? '?' + queryPart : ''}`,
       `${base}/wp/wp-json${pathPart}${queryPart ? '?' + queryPart : ''}`,
     ];
     for (const url of candidates) {
       try {
         const probe = await axios.get(url, {
+          headers: this._headers(),
           timeout: 5000,
           validateStatus: () => true, // don't throw on any status
           maxRedirects: 2,
         });
-        // Accept: 200, 201, 401, 403 (auth required but route exists)
-        // Reject: 404 (route not found)
-        if (probe.status < 400 || probe.status === 401 || probe.status === 403) return url;
+        // Accept: 200, 201, 401 (route exists and accessible)
+        if (probe.status === 200 || probe.status === 201 || probe.status === 401) return url;
       } catch {}
     }
     // Fallback: query param mode (always works)

@@ -224,6 +224,9 @@ router.post("/drafts/:id/auto-pipeline", async (req, res) => {
         const now = new Date();
         const dateContext = `[Ngữ cảnh: Thông tin cập nhật đến tháng ${now.getMonth() + 1}/${now.getFullYear()}. KHÔNG cần nhắc năm trong tiêu đề hay nội dung trừ khi chủ đề yêu cầu.]`;
 
+        const targetWordsForOutline = pipelineWordCount || 2000;
+        const suggestedH2 = targetWordsForOutline <= 1200 ? "4-5" : targetWordsForOutline <= 2200 ? "5-6" : targetWordsForOutline <= 3200 ? "7-8" : "8-10";
+
         let outlinePrompt;
         if (customOutlinePrompt) {
           // Substitute variables in project/global prompt
@@ -235,7 +238,7 @@ router.post("/drafts/:id/auto-pipeline", async (req, res) => {
           outlinePrompt += `\n\n📊 FORMAT OUTPUT (JSON):\n{ "title": "...", "metaDescription": "...", "focusKeyword": "${keyword}",\n  "outline": [ { "tag": "h2", "text": "...", "hint": "..." } ],\n  "faq": [ { "question": "...", "answer": "..." } ] }`;
         } else {
           // Hardcoded fallback
-          outlinePrompt = `Bạn là chuyên gia SEO #1 Việt Nam. Tạo OUTLINE chi tiết cho bài viết về "${keyword}".\n${dateContext}\n📋 YÊU CẦU:\n1. Title Tag (tối đa 60 ký tự, chứa keyword chính, KHÔNG thêm năm trừ khi keyword có chứa năm)\n2. Meta Description (tối đa 160 ký tự, hấp dẫn)\n3. Cấu trúc H2 → H3 (tối thiểu 8 H2)\n4. FAQ 5-7 câu\n${draft.customPrompt ? `\n📝 YÊU CẦU RIÊNG: ${draft.customPrompt}` : ""}\n${research.analysis ? `\n📊 DỮ LIỆU: Đã phân tích ${research.analysis.totalArticles || 0} bài top Google` : ""}\n\n📊 FORMAT OUTPUT (JSON):\n{ "title": "...", "metaDescription": "...", "focusKeyword": "${keyword}",\n  "outline": [ { "tag": "h2", "text": "...", "hint": "..." } ],\n  "faq": [ { "question": "...", "answer": "..." } ], "schema": "Article" }`;
+          outlinePrompt = `Bạn là chuyên gia SEO #1 Việt Nam. Tạo OUTLINE chi tiết cho bài viết về "${keyword}".\n${dateContext}\n📋 YÊU CẦU:\n1. Title Tag (tối đa 60 ký tự, chứa keyword chính, KHÔNG thêm năm trừ khi keyword có chứa năm)\n2. Meta Description (tối đa 160 ký tự, hấp dẫn)\n3. Cấu trúc H2: Tạo chính xác ${suggestedH2} thẻ H2 logic theo Search Intent (phù hợp với độ dài bài viết ${targetWordsForOutline} từ)\n4. FAQ 4-5 câu hỏi thực tế\n${draft.customPrompt ? `\n📝 YÊU CẦU RIÊNG: ${draft.customPrompt}` : ""}\n${research.analysis ? `\n📊 DỮ LIỆU: Đã phân tích ${research.analysis.totalArticles || 0} bài top Google` : ""}\n\n📊 FORMAT OUTPUT (JSON):\n{ "title": "...", "metaDescription": "...", "focusKeyword": "${keyword}",\n  "outline": [ { "tag": "h2", "text": "...", "hint": "..." } ],\n  "faq": [ { "question": "...", "answer": "..." } ], "schema": "Article" }`;
         }
 
         const outlineResult = await aiService.generate(outlinePrompt, settings, { apiKeys });
@@ -257,21 +260,57 @@ router.post("/drafts/:id/auto-pipeline", async (req, res) => {
 
         let rawContent;
         if (contentMode === "quality") {
-          // Quality mode: viết từng section riêng biệt
+          // Quality mode: viết từng section chuyên sâu chuẩn E-E-A-T với ngân sách từ chuẩn xác
           const h2Sections = (outline.outline || []).filter(s => s.tag === "h2");
-          const perSectionWords = Math.ceil(contentWordCount / Math.max(h2Sections.length, 1));
+          const totalTarget = contentWordCount || 2000;
+          const introWords = Math.min(200, Math.round(totalTarget * 0.08));
+          const faqCount = (outline.faq || []).length;
+          const faqWords = faqCount > 0 ? Math.min(300, faqCount * 50) : 0;
+          const conclWords = 150;
+          const sectionsBudget = Math.max(400, totalTarget - introWords - faqWords - conclWords);
+          const perSectionWords = Math.max(180, Math.round(sectionsBudget / Math.max(h2Sections.length, 1)));
+          const minSecWords = Math.round(perSectionWords * 0.85);
+          const maxSecWords = Math.round(perSectionWords * 1.15);
+
           const parts = [];
-          const introP = `Viết phần MỞ ĐẦU (150-200 từ, tiếng Việt) cho bài "${outline.title || keyword}". Keyword "${keyword}" phải trong 50 từ đầu. Giới hạn: Chỉ viết tối đa 2 đoạn văn ngắn (khoảng 3 câu/đoạn). Format Markdown.`;
+          const introP = `Bạn là chuyên gia hàng đầu về "${keyword}". Viết phần MỞ ĐẦU chuyên nghiệp, hấp dẫn chuẩn E-E-A-T (khoảng ${introWords} từ, tiếng Việt) cho bài viết "${outline.title || keyword}".
+- Keyword chính "${keyword}" xuất hiện tự nhiên trong 50 từ đầu tiên.
+- Mở đầu bằng hook lôi cuốn (thực trạng, số liệu hoặc insight đắt giá).
+- Nêu rõ lợi ích và giá trị người đọc nhận được từ bài viết này.
+- Format Markdown, không dùng thẻ <h1>.`;
           const intro = await aiService.generate(introP, settings, { apiKeys });
           parts.push(intro.trim());
+
           for (const sec of h2Sections) {
-            const maxParagraphs = Math.max(2, Math.ceil(perSectionWords / 75));
-            const secP = `Viết section "## ${sec.text}" cho bài "${outline.title || keyword}". Gợi ý: ${sec.hint || ""}. Giới hạn cứng: Chỉ viết tối đa ${maxParagraphs} đoạn văn ngắn (mỗi đoạn 2-4 câu). Không viết lan man. Format Markdown, bắt đầu bằng ## heading.`;
-            try { parts.push((await aiService.generate(secP, settings, { apiKeys })).trim()); } catch { parts.push(`## ${sec.text}\n\nNội dung đang được cập nhật.`); }
+            const secP = `Bạn là chuyên gia SEO & Content E-E-A-T. Viết section chi tiết "## ${sec.text}" cho bài "${outline.title || keyword}".
+- Từ khóa chính: "${keyword}"
+- Gợi ý chủ đề: ${sec.hint || ""}
+- YÊU CẦU ĐỘ DÀI PHÂN BỔ: Khoảng ${perSectionWords} từ (tối thiểu ${minSecWords} từ, tối đa ${maxSecWords} từ).
+- ⚠️ QUAN TRỌNG: Viết sâu sắc, súc tích, giải thích đúng trọng tâm. Không viết lan man vượt quá ${maxSecWords} từ.
+- TIÊU CHUẨN E-E-A-T & ĐỘ SÂU:
+  1. Phân tích chi tiết, giải thích rõ bản chất, không viết chung chung, sơ sài.
+  2. BẮT BUỘC có ví dụ thực tế / góc nhìn chuyên gia / trích dẫn mẹo thực chiến: "> 💡 **Lưu ý chuyên gia:** ...".
+  3. Nếu có so sánh, phân loại hoặc thông số → BẮT BUỘC dùng Bảng biểu Markdown (| Cột 1 | Cột 2 | Cột 3 |).
+  4. Sử dụng danh sách bullet points / đánh số để tăng trải nghiệm đọc.
+- Bắt đầu bằng ## ${sec.text}. Format Markdown chuẩn.`;
+            try {
+              const secContent = await aiService.generate(secP, settings, { apiKeys });
+              parts.push(secContent.trim());
+            } catch {
+              parts.push(`## ${sec.text}\n\nNội dung đang được cập nhật.`);
+            }
           }
+
           if (outline.faq?.length > 0) {
-            parts.push(`## Câu hỏi thường gặp\n\n${outline.faq.map(f => `**${f.question}**\n${f.answer || ""}`).join("\n\n")}`);
+            parts.push(`## Câu hỏi thường gặp về ${keyword}\n\n${outline.faq.map(f => `### ${f.question}\n${f.answer || ""}`).join("\n\n")}`);
           }
+
+          const conclP = `Viết phần KẾT LUẬN & LỜI KHUYÊN HÀNH ĐỘNG (khoảng ${conclWords} từ, tiếng Việt) cho bài viết "${outline.title || keyword}". Tóm tắt điểm cốt lõi, đưa ra checklist hành động và lời kêu gọi hành động (CTA) tự nhiên. Format Markdown bắt đầu bằng ## Kết luận.`;
+          try {
+            const concl = await aiService.generate(conclP, settings, { apiKeys });
+            parts.push(concl.trim());
+          } catch {}
+
           rawContent = parts.join("\n\n");
         } else if (customContentPrompt) {
           let writePrompt = customContentPrompt
@@ -283,8 +322,25 @@ router.post("/drafts/:id/auto-pipeline", async (req, res) => {
         } else {
           const prompts = await storage.getAllForUser("prompts", req.userId);
           const styleTemplate = prompts.find(p => p.type === "write-article" && p.isDefault);
-          const targetParagraphsCount = Math.max(5, Math.ceil(contentWordCount / 75));
-          const writePrompt = `Bạn là chuyên gia viết blog SEO tiếng Việt.\n[Ngữ cảnh: Thông tin cập nhật đến tháng ${new Date().getMonth() + 1}/${new Date().getFullYear()}. Viết tự nhiên, KHÔNG nhồi năm vào nội dung trừ khi chủ đề yêu cầu.]\n📌 KEYWORD: ${keyword}\n📏 ĐỘ DÀI MỤC TIÊU: Khoảng ${contentWordCount} từ. ⚠️ Giới hạn tối đa ${targetParagraphsCount} đoạn văn cho toàn bài. Không viết lan man dài dòng.\n📋 OUTLINE:\n${JSON.stringify(outline, null, 2)}\n${styleTemplate ? `🎭 PHONG CÁCH:\n${styleTemplate.content}` : "🎭 TONE: Thân thiện, tự nhiên."}\n${draft.customPrompt ? `📝 HƯỚNG DẪN: ${draft.customPrompt}` : ""}\n✅ YÊU CẦU: Viết theo outline, mỗi H2 ít nhất 200 từ, keyword trong 100 từ đầu, Format Markdown`;
+          const minTotalWords = Math.round(contentWordCount * 0.9);
+          const maxTotalWords = Math.round(contentWordCount * 1.15);
+          const writePrompt = `Bạn là chuyên gia Content SEO #1 Việt Nam. Viết bài viết toàn diện, chuyên sâu chuẩn E-E-A-T.
+[Ngữ cảnh: Thông tin cập nhật mới nhất năm ${new Date().getFullYear()}. Viết tự nhiên, chuyên nghiệp.]
+📌 TỪ KHÓA CHÍNH: "${keyword}"
+📏 ĐỘ DÀI MỤC TIÊU: Khoảng ${contentWordCount} từ (dao động từ ${minTotalWords} đến tối đa ${maxTotalWords} từ, không viết vượt quá ${Math.round(contentWordCount * 1.25)} từ).
+
+📋 DÀN Ý CHI TIẾT (BẮT BUỘC VIẾT ĐẦY ĐỦ CÁC HEADING):
+${JSON.stringify(outline, null, 2)}
+
+${styleTemplate ? `🎭 PHONG CÁCH:\n${styleTemplate.content}` : "🎭 TONE & GIỌNG VĂN: Chuyên gia, thực chiến, đáng tin cậy, phân tích sâu sắc."}
+${draft.customPrompt ? `📝 HƯỚNG DẪN BỔ SUNG: ${draft.customPrompt}` : ""}
+
+⭐ BẮT BUỘC TUÂN THỦ TIÊU CHUẨN E-E-A-T:
+1. **Experience (Trải nghiệm thực tế):** Chia sẻ case study, bài học từ các dự án thực tế, các lỗi sai phổ biến và cách khắc phục.
+2. **Expertise (Chuyên môn sâu):** Hướng dẫn từng bước (Step-by-step), giải thích tường tận nguyên lý, thuật ngữ chuyên ngành.
+3. **Authoritativeness (Thẩm quyền & Trực quan):** BẮT BUỘC có ít nhất 1-2 Bảng so sánh dữ liệu (Markdown table), trích dẫn số liệu / tip chuyên gia (dùng > blockquote).
+4. **Trustworthiness (Tin cậy & Cấu trúc):** Keyword chính trong 100 từ đầu tiên, viết sâu sắc đúng trọng tâm các heading, có phần FAQ chi tiết và Kết luận kèm CTA.
+5. Định dạng: Markdown chuẩn (##, ###, **, *, >, | table |).`;
           rawContent = await aiService.generate(writePrompt, settings, { apiKeys });
         }
 
@@ -1057,29 +1113,35 @@ router.post("/drafts/:id/content", async (req, res) => {
     let html, wordCount, raw;
 
     if (mode === "quality") {
-      // Quality mode: viết từng section riêng biệt
+      // Quality mode: viết từng section chuyên sâu chuẩn E-E-A-T
       const h2Sections = (outline.outline || []).filter(s => s.tag === "h2");
-      const perSectionWords = Math.ceil(targetWordCount / Math.max(h2Sections.length, 1));
+      const perSectionWords = Math.max(350, Math.ceil(targetWordCount / Math.max(h2Sections.length, 1)));
       const parts = [];
 
       // Intro
-      const introPrompt = `Viết phần MỞ ĐẦU (150-200 từ, tiếng Việt) cho bài "${outline.title || keyword}".
-Keyword "${keyword}" phải xuất hiện trong 50 từ đầu. Kết thúc dẫn dắt vào nội dung. Giới hạn độ dài: Chỉ viết tối đa 2 đoạn văn ngắn (khoảng 3 câu mỗi đoạn). Format Markdown.`;
+      const introPrompt = `Bạn là chuyên gia hàng đầu về "${keyword}". Viết phần MỞ ĐẦU chuyên nghiệp, hấp dẫn chuẩn E-E-A-T (khoảng 200-250 từ, tiếng Việt) cho bài viết "${outline.title || keyword}".
+- Keyword chính "${keyword}" xuất hiện tự nhiên trong 50 từ đầu tiên.
+- Mở đầu bằng hook lôi cuốn (thực trạng, số liệu hoặc insight đắt giá).
+- Nêu rõ lợi ích và giá trị người đọc nhận được từ bài viết này.
+- Format Markdown, không dùng thẻ <h1>.`;
       const intro = await aiService.generate(introPrompt, settings, { apiKeys });
       parts.push(intro.trim());
 
       // Mỗi H2 section
       for (const sec of h2Sections) {
         const hints = (outline.outline || []).filter(s => s.tag === "h3" && s.parent === h2Sections.indexOf(sec)).map(s => `- ${s.text}`).join("\n");
-        const maxParagraphs = Math.max(2, Math.ceil(perSectionWords / 75));
-        const secPrompt = `Viết section "## ${sec.text}" cho bài "${outline.title || keyword}".
-- Độ dài mục tiêu: Khoảng ${perSectionWords} từ.
-- ⚠️ Số lượng đoạn văn: Chỉ viết tối đa ${maxParagraphs} đoạn văn ngắn (mỗi đoạn từ 2-4 câu).
-- ⚠️ Không viết lan man, dài dòng, đi thẳng vào ý chính.
-${sec.hint ? `Gợi ý: ${sec.hint}` : ""}
-${hints ? `Sub-sections:\n${hints}` : ""}
+        const secPrompt = `Bạn là chuyên gia SEO & Content E-E-A-T. Viết section chi tiết "## ${sec.text}" cho bài "${outline.title || keyword}".
+- Từ khóa chính: "${keyword}"
+- Gợi ý chủ đề: ${sec.hint || ""}
+- YÊU CẦU ĐỘ DÀI: Tối thiểu ${perSectionWords} từ cho section này.
+- TIÊU CHUẨN E-E-A-T & ĐỘ SÂU:
+  1. Phân tích chi tiết, giải thích rõ bản chất, không viết chung chung, sơ sài.
+  2. BẮT BUỘC có ví dụ thực tế / góc nhìn chuyên gia / trích dẫn mẹo thực chiến: "> 💡 **Lưu ý chuyên gia:** ...".
+  3. Nếu có so sánh, phân loại hoặc thông số → BẮT BUỘC dùng Bảng biểu Markdown (| Cột 1 | Cột 2 | Cột 3 |).
+  4. Sử dụng danh sách bullet points / đánh số để tăng trải nghiệm đọc.
+${hints ? `Sub-sections cần triển khai:\n${hints}` : ""}
 ${styleTemplate ? `Phong cách: ${styleTemplate.content.slice(0, 200)}` : ""}
-Format Markdown, bắt đầu bằng ## heading.`;
+- Bắt đầu bằng ## ${sec.text}. Format Markdown chuẩn.`;
         try {
           const secContent = await aiService.generate(secPrompt, settings, { apiKeys });
           parts.push(secContent.trim());
@@ -1090,10 +1152,10 @@ Format Markdown, bắt đầu bằng ## heading.`;
 
       // FAQ + Kết luận
       if (outline.faq?.length > 0) {
-        const faqText = outline.faq.map(f => `**${f.question}**\n${f.answer || ""}`).join("\n\n");
-        parts.push(`## Câu hỏi thường gặp\n\n${faqText}`);
+        const faqText = outline.faq.map(f => `### ${f.question}\n${f.answer || ""}`).join("\n\n");
+        parts.push(`## Câu hỏi thường gặp về ${keyword}\n\n${faqText}`);
       }
-      const conclPrompt = `Viết phần KẾT LUẬN (100-150 từ, tiếng Việt) cho bài "${outline.title || keyword}". Tóm tắt + CTA. Format Markdown.`;
+      const conclPrompt = `Viết phần KẾT LUẬN & LỜI KHUYÊN HÀNH ĐỘNG (150-200 từ, tiếng Việt) cho bài viết "${outline.title || keyword}". Tóm tắt điểm cốt lõi, đưa ra checklist hành động và lời kêu gọi hành động (CTA) tự nhiên. Format Markdown bắt đầu bằng ## Kết luận.`;
       try {
         const concl = await aiService.generate(conclPrompt, settings, { apiKeys });
         parts.push(concl.trim());
@@ -1102,15 +1164,23 @@ Format Markdown, bắt đầu bằng ## heading.`;
       raw = parts.join("\n\n");
     } else {
       // Basic mode: 1 prompt
-      const targetParagraphsCount = Math.max(5, Math.ceil(targetWordCount / 75));
-      const writePrompt = `Bạn là chuyên gia viết blog SEO tiếng Việt.
-[Ngữ cảnh: Thông tin cập nhật đến tháng ${new Date().getMonth() + 1}/${new Date().getFullYear()}. Viết tự nhiên, KHÔNG nhồi năm vào nội dung trừ khi chủ đề yêu cầu.]
-📌 KEYWORD: ${keyword}
-📏 ĐỘ DÀI MỤC TIÊU: Khoảng ${targetWordCount} từ. ⚠️ Giới hạn tối đa ${targetParagraphsCount} đoạn văn cho toàn bài. Không viết lan man dài dòng.
-📋 OUTLINE:\n${JSON.stringify(outline, null, 2)}
-${styleTemplate ? `🎭 PHONG CÁCH:\n${styleTemplate.content}` : "🎭 TONE: Thân thiện, tự nhiên."}
-${draft.customPrompt ? `📝 HƯỚNG DẪN: ${draft.customPrompt}` : ""}
-✅ YÊU CẦU: Viết theo outline, mỗi H2 ít nhất 200 từ, keyword trong 100 từ đầu, Format Markdown`;
+      const writePrompt = `Bạn là chuyên gia Content SEO #1 Việt Nam. Viết bài viết toàn diện, chuyên sâu chuẩn E-E-A-T.
+[Ngữ cảnh: Thông tin cập nhật mới nhất năm ${new Date().getFullYear()}. Viết tự nhiên, chuyên nghiệp.]
+📌 TỪ KHÓA CHÍNH: "${keyword}"
+📏 ĐỘ DÀI BẮT BUỘC: TỐI THIỂU ${targetWordCount} TỪ (Tuyệt đối không viết ngắn dưới ${Math.round(targetWordCount * 0.95)} từ).
+
+📋 DÀN Ý CHI TIẾT (BẮT BUỘC VIẾT ĐẦY ĐỦ CÁC HEADING):
+${JSON.stringify(outline, null, 2)}
+
+${styleTemplate ? `🎭 PHONG CÁCH:\n${styleTemplate.content}` : "🎭 TONE & GIỌNG VĂN: Chuyên gia, thực chiến, đáng tin cậy, phân tích sâu sắc."}
+${draft.customPrompt ? `📝 HƯỚNG DẪN BỔ SUNG: ${draft.customPrompt}` : ""}
+
+⭐ BẮT BUỘC TUÂN THỦ TIÊU CHUẨN E-E-A-T:
+1. **Experience (Trải nghiệm thực tế):** Chia sẻ case study, bài học từ các dự án thực tế, các lỗi sai phổ biến và cách khắc phục.
+2. **Expertise (Chuyên môn sâu):** Hướng dẫn từng bước (Step-by-step), giải thích tường tận nguyên lý, thuật ngữ chuyên ngành.
+3. **Authoritativeness (Thẩm quyền & Trực quan):** BẮT BUỘC có ít nhất 1-2 Bảng so sánh dữ liệu (Markdown table), trích dẫn số liệu / tip chuyên gia (dùng > blockquote).
+4. **Trustworthiness (Tin cậy & Cấu trúc):** Keyword chính trong 100 từ đầu tiên, mỗi H2 viết tối thiểu 300 từ, có phần FAQ chi tiết và Kết luận kèm CTA.
+5. Định dạng: Markdown chuẩn (##, ###, **, *, >, | table |).`;
       raw = await aiService.generate(writePrompt, settings, { apiKeys });
     }
 

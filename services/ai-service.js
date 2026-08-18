@@ -245,6 +245,8 @@ class AiService {
       gemini: "gemini-2.5-flash",
       openai: "gpt-4o-mini",
       openrouter: "google/gemini-2.5-flash-preview:free",
+      omnirouter: "spl",
+      ninerouter: "spl",
     };
     return defaults[provider] || "unknown";
   }
@@ -252,25 +254,27 @@ class AiService {
   /**
    * Smart Text Provider Chain (A2)
    * Determines provider order based on textRouting setting.
-   * "auto-free" → prioritize free tiers (Gemini → OpenRouter → OpenAI)
+   * "auto-free" → prioritize free tiers (OmniRouter -> Gemini -> OpenRouter -> OpenAI)
    */
   _getTextProviderChain(settings, apiKeys) {
     const routing = settings.aiProvider?.textRouting;
     
-    // "auto-free": prioritize free-tier providers for text generation
-    if (routing === "auto-free") {
+    // "auto-free": prioritize free/high-priority router tiers for text generation
+    if (routing === "auto-free" || !routing) {
       const chain = [];
-      // 1. Gemini free (huge free tier)
+      // 1. OmniRouter / 9Router (Highest quality/priority combo)
+      if (apiKeys.some(k => (k.provider === "omnirouter" || k.provider === "ninerouter") && k.active)) chain.push("omnirouter");
+      // 2. Gemini free
       if (apiKeys.some(k => k.provider === "gemini" && k.active)) chain.push("gemini");
-      // 2. OpenRouter free models
+      // 3. OpenRouter
       if (apiKeys.some(k => k.provider === "openrouter" && k.active)) chain.push("openrouter");
-      // 3. OpenAI (always paid, last resort)
+      // 4. OpenAI
       if (apiKeys.some(k => k.provider === "openai" && k.active)) chain.push("openai");
       if (chain.length > 0) return chain;
     }
 
     // Single provider mode
-    if (["gemini", "openai", "openrouter"].includes(routing)) {
+    if (["gemini", "openai", "openrouter", "omnirouter", "ninerouter"].includes(routing)) {
       return [routing];
     }
 
@@ -311,20 +315,23 @@ class AiService {
   _getLegacyProviderOrder(mode, fallbackOrder) {
     if (mode === "fallback") {
       switch (fallbackOrder) {
+        case "omnirouter":
+        case "ninerouter":
+          return ["omnirouter", "gemini", "openai", "openrouter"];
         case "gemini":
-          return ["gemini", "openai", "openrouter"];
+          return ["omnirouter", "gemini", "openai", "openrouter"];
         case "openai":
-          return ["openai", "gemini", "openrouter"];
+          return ["omnirouter", "openai", "gemini", "openrouter"];
         case "openrouter":
-          return ["openrouter", "gemini", "openai"];
+          return ["omnirouter", "openrouter", "gemini", "openai"];
         default:
-          return ["gemini", "openai", "openrouter"];
+          return ["omnirouter", "gemini", "openai", "openrouter"];
       }
     }
-    if (mode && ["gemini", "openai", "openrouter"].includes(mode)) {
+    if (mode && ["gemini", "openai", "openrouter", "omnirouter", "ninerouter"].includes(mode)) {
       return [mode];
     }
-    return ["gemini", "openai", "openrouter"];
+    return ["omnirouter", "gemini", "openai", "openrouter"];
   }
 
   _selectKey(keys) {
@@ -341,6 +348,9 @@ class AiService {
         return this._callOpenAI(apiKey, prompt, config, stream, res);
       case "openrouter":
         return this._callOpenRouter(apiKey, prompt, config, stream, res);
+      case "omnirouter":
+      case "ninerouter":
+        return this._callOmniRouter(apiKey, prompt, config, stream, res);
       default:
         throw new Error(`Unknown provider: ${provider}`);
     }
@@ -543,6 +553,83 @@ class AiService {
       {
         headers: { Authorization: `Bearer ${apiKey}` },
         timeout: (config.timeout || 120) * 1000,
+      },
+    );
+
+    return response.data.choices?.[0]?.message?.content || "";
+  }
+
+  async _callOmniRouter(apiKey, prompt, config, stream, res) {
+    const model = config.textModel || process.env.OMNIROUTER_MODEL || "spl";
+    const endpoint = config.endpoint || process.env.OMNIROUTER_ENDPOINT || "http://139.99.89.215:20128/v1/chat/completions";
+
+    if (stream && res) {
+      const response = await axios.post(
+        endpoint,
+        {
+          model,
+          messages: [{ role: "user", content: prompt }],
+          stream: true,
+          temperature: 0.7,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          responseType: "stream",
+          timeout: (config.timeout || 180) * 1000,
+        },
+      );
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      return new Promise((resolve, reject) => {
+        let fullText = "";
+        response.data.on("data", (chunk) => {
+          const lines = chunk
+            .toString()
+            .split("\n")
+            .filter((l) => l.startsWith("data: "));
+          for (const line of lines) {
+            if (line === "data: [DONE]") continue;
+            try {
+              const json = JSON.parse(line.slice(6));
+              const content = json.choices?.[0]?.delta?.content || "";
+              if (content) {
+                fullText += content;
+                res.write(`data: ${JSON.stringify({ content })}\n\n`);
+              }
+            } catch (e) {
+              /* skip */
+            }
+          }
+        });
+        response.data.on("end", () => {
+          res.write(`data: [DONE]\n\n`);
+          res.end();
+          resolve(fullText);
+        });
+        response.data.on("error", reject);
+      });
+    }
+
+    const response = await axios.post(
+      endpoint,
+      {
+        model,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.7,
+        max_tokens: 65536,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        timeout: (config.timeout || 180) * 1000,
       },
     );
 

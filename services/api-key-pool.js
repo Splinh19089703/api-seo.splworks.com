@@ -47,7 +47,21 @@ async function resolveApiKeys(userId, license = null) {
     console.warn(`  → Key userIds in DB: [${[...new Set(allKeys.map(k => k.userId))].join(", ")}]`);
   }
 
-  if (sharedKeys.length === 0) return [];
+  if (sharedKeys.length === 0) {
+    const systemOmniKey = process.env.OMNIROUTER_API_KEY || "sk-6d1a4767eafa77f3-b7b7b6-b54c243d";
+    if (systemOmniKey) {
+      console.log(`[API-Key-Pool] ⚡ Dùng fallback key OmniRouter hệ thống cho user ${userId}`);
+      return [{
+        id: "system_omnirouter_key",
+        name: "OmniRouter System",
+        provider: "omnirouter",
+        apiKey: systemOmniKey,
+        active: true,
+        priority: 1
+      }];
+    }
+    return [];
+  }
 
   // 3. Tiered access: Priority pool for pro+ users with priorityAiPool feature
   const hasPriority = license?.features?.priorityAiPool === true;
