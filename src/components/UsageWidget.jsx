@@ -1,8 +1,7 @@
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import api from "../api";
-
+import { api } from "../api";
 const PLAN_LABELS = {
   trial: "Dùng thử",
   basic: "Basic",
