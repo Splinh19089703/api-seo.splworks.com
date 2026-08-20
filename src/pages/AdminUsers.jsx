@@ -925,9 +925,27 @@ function UserInspectionModal({ user, onClose }) {
             </div>
           )}
 
-          {/* TAB 2: STANDALONE DRAFTS */}
+                    {/* TAB 2: STANDALONE DRAFTS */}
           {activeTab === "drafts" && (
             <div>
+              {/* Informative Header Banner */}
+              <div
+                style={{
+                  padding: "12px 16px",
+                  borderRadius: 8,
+                  background: "rgba(59, 130, 246, 0.08)",
+                  border: "1px solid rgba(59, 130, 246, 0.2)",
+                  marginBottom: 16,
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                  color: "#93c5fd",
+                }}
+              >
+                📍 <strong>Vị trí dữ liệu:</strong> Đây là các bài viết nằm trong mục <strong>Tạo bài viết (Pipeline)</strong> của khách hàng.
+                <br />
+                Khách hàng import danh sách từ khóa vào đây để AI tự động thực hiện quy trình 6 bước (Nghiên cứu → Dàn ý → Viết bài → Thumbnail → Ảnh minh họa → Đăng bài).
+              </div>
+
               {loadingDrafts ? (
                 <div style={{ textAlign: "center", padding: 40 }}>
                   <span className="loader" />
@@ -939,7 +957,10 @@ function UserInspectionModal({ user, onClose }) {
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {drafts.map((d) => {
+                    const currentStep = d.currentStep || (d.pipeline?.stepNumber || 1);
+                    const statusInfo = getDraftStatusBadge(d.status, currentStep, d.error);
                     const isError = d.status === "error" || Boolean(d.error);
+
                     return (
                       <div
                         key={d.id}
@@ -959,11 +980,12 @@ function UserInspectionModal({ user, onClose }) {
                         }}
                       >
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 2 }}>{d.title}</div>
-                          <div style={{ fontSize: 11, color: "var(--text-muted)", display: "flex", gap: 12 }}>
-                            <span>Từ khóa: <strong>{d.keyword}</strong></span>
-                            <span>Bước hiện tại: {d.currentStep}/6</span>
-                            <span>Số từ: {d.wordCount}</span>
+                          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 2 }}>{d.title || d.keyword}</div>
+                          <div style={{ fontSize: 11, color: "var(--text-muted)", display: "flex", gap: 14, flexWrap: "wrap" }}>
+                            <span>Từ khóa: <strong style={{ color: "#fff" }}>{d.keyword}</strong></span>
+                            <span>Tiến độ: <strong>Bước {currentStep}/6</strong></span>
+                            <span>Số từ: {d.wordCount || 0}</span>
+                            <span>Tạo ngày: {new Date(d.createdAt).toLocaleDateString("vi-VN")}</span>
                           </div>
                           {isError && (
                             <div
@@ -983,10 +1005,10 @@ function UserInspectionModal({ user, onClose }) {
 
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <span
-                            className={`badge ${isError ? "badge-critical" : "badge-info"}`}
+                            className={`badge ${statusInfo.badgeClass}`}
                             style={{ fontSize: 11 }}
                           >
-                            {d.status}
+                            {statusInfo.label}
                           </span>
                           <button
                             className="btn btn-secondary btn-sm"
@@ -1255,63 +1277,394 @@ function ArticleReaderModal({ article, onClose }) {
 /**
  * Draft Reader Modal for standalone drafts
  */
+/**
+ * Pipeline 6-Step Configuration
+ */
+const PIPELINE_STEPS = [
+  { step: 1, id: "research", label: "1. Nghiên cứu", icon: "🔍", desc: "Crawl đối thủ & phân tích intent" },
+  { step: 2, id: "outline", label: "2. Lập dàn ý", icon: "📑", desc: "Cấu trúc H2, H3 chuẩn SEO" },
+  { step: 3, id: "content", label: "3. Viết nội dung", icon: "✍️", desc: "Sinh bài viết chuyên sâu" },
+  { step: 4, id: "thumbnail", label: "4. Thumbnail", icon: "🖼️", desc: "Tạo ảnh đại diện AI" },
+  { step: 5, id: "section_image", label: "5. Ảnh Sections", icon: "🎨", desc: "Ảnh minh họa từng phần" },
+  { step: 6, id: "publish", label: "6. Hoàn tất", icon: "📤", desc: "Đăng lên WordPress / Export" },
+];
+
+function getDraftStatusBadge(status, currentStep = 1, error = null) {
+  if (error || status === "error") {
+    return {
+      label: "⚠️ Bị lỗi ở Bước " + currentStep,
+      badgeClass: "badge-critical",
+      color: "#ef4444",
+      bg: "rgba(239, 68, 68, 0.15)",
+      desc: "Quá trình chạy AI bị lỗi.",
+    };
+  }
+  if (status === "pending") {
+    return {
+      label: "⏳ Hàng chờ (Chưa chạy)",
+      badgeClass: "badge-secondary",
+      color: "#94a3b8",
+      bg: "rgba(148, 163, 184, 0.15)",
+      desc: "Đang chờ kích hoạt chạy AI qua 6 bước.",
+    };
+  }
+  if (status === "review") {
+    return {
+      label: "👀 Chờ duyệt Bước " + currentStep,
+      badgeClass: "badge-warning",
+      color: "#f59e0b",
+      bg: "rgba(245, 158, 11, 0.15)",
+      desc: "Đã sinh xong bản nháp, đang chờ khách hàng duyệt để sang bước tiếp.",
+    };
+  }
+  if (status === "generating" || status === "research" || status === "outline" || status === "writing") {
+    return {
+      label: "⚡ Đang xử lý Bước " + currentStep,
+      badgeClass: "badge-info",
+      color: "#3b82f6",
+      bg: "rgba(59, 130, 246, 0.15)",
+      desc: "AI đang tự động sinh nội dung.",
+    };
+  }
+  if (status === "completed" || status === "published") {
+    return {
+      label: "✅ Hoàn tất 6/6 bước",
+      badgeClass: "badge-success",
+      color: "#10b981",
+      bg: "rgba(16, 185, 129, 0.15)",
+      desc: "Bài viết đã hoàn thành.",
+    };
+  }
+  return {
+    label: status,
+    badgeClass: "badge-info",
+    color: "#94a3b8",
+    bg: "rgba(255,255,255,0.1)",
+    desc: "Trạng thái khác",
+  };
+}
+
+/**
+ * Draft Reader Modal for standalone pipeline drafts
+ */
 function DraftReaderModal({ draft, onClose }) {
+  const [activeTab, setActiveTab] = useState("progress");
+  const currentStep = draft.currentStep || (draft.pipeline?.stepNumber || 1);
+  const statusInfo = getDraftStatusBadge(draft.status, currentStep, draft.error);
+  const pipeline = draft.pipeline || {};
+
   return (
     <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1100 }}>
       <div
         className="modal"
         onClick={(e) => e.stopPropagation()}
         style={{
-          maxWidth: 900,
-          width: "90vw",
+          maxWidth: 960,
+          width: "92vw",
           maxHeight: "88vh",
           display: "flex",
           flexDirection: "column",
           padding: 0,
         }}
       >
+        {/* Header */}
         <div
           style={{
-            padding: "14px 20px",
+            padding: "16px 24px",
             borderBottom: "1px solid rgba(255,255,255,0.08)",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            background: "rgba(0,0,0,0.2)",
+            background: "rgba(0,0,0,0.25)",
           }}
         >
           <div>
-            <h3 style={{ margin: 0, fontSize: 16 }}>
-              ✍️ Chi tiết Draft: {draft.title || draft.keyword}
-            </h3>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-              Bước: <strong>{draft.currentStep}/6</strong> • Trạng thái: <code>{draft.status}</code>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>
+                ✍️ {draft.title || draft.keyword || "Bài viết Pipeline"}
+              </h3>
+              <span
+                className={`badge ${statusInfo.badgeClass}`}
+                style={{ fontSize: 11, padding: "2px 8px" }}
+              >
+                {statusInfo.label}
+              </span>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-secondary, #94a3b8)", marginTop: 3 }}>
+              📍 <strong>Vị trí:</strong> Mục <em>Tạo bài viết (Pipeline)</em> • Từ khóa chính:{" "}
+              <strong style={{ color: "#fff" }}>{draft.keyword}</strong> • Tạo lúc:{" "}
+              {new Date(draft.createdAt).toLocaleString("vi-VN")}
             </div>
           </div>
           <button
             onClick={onClose}
-            style={{ background: "none", border: "none", fontSize: 20, color: "var(--text-muted)", cursor: "pointer" }}
+            style={{ background: "none", border: "none", fontSize: 22, color: "var(--text-muted)", cursor: "pointer" }}
           >
             ✕
           </button>
         </div>
 
-        <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
-          {draft.error && (
-            <div style={{ padding: 12, borderRadius: 8, background: "rgba(239,68,68,0.15)", color: "#f87171", marginBottom: 14 }}>
-              <strong>⚠️ Lỗi ghi nhận:</strong> {draft.error}
+        {/* 6-Step Visual Timeline Banner */}
+        <div
+          style={{
+            padding: "14px 24px",
+            background: "rgba(0,0,0,0.15)",
+            borderBottom: "1px solid rgba(255,255,255,0.06)",
+          }}
+        >
+          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", marginBottom: 10, textTransform: "uppercase" }}>
+            Tiến trình Quy trình 6 Bước Pipeline:
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(6, 1fr)",
+              gap: 8,
+            }}
+          >
+            {PIPELINE_STEPS.map((s) => {
+              const isPassed = draft.status === "completed" || draft.status === "published" || currentStep > s.step;
+              const isCurrent = currentStep === s.step;
+              const isError = isCurrent && (draft.status === "error" || Boolean(draft.error));
+
+              return (
+                <div
+                  key={s.step}
+                  style={{
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    border: isError
+                      ? "1px solid #ef4444"
+                      : isCurrent
+                      ? "1px solid #3b82f6"
+                      : isPassed
+                      ? "1px solid rgba(16, 185, 129, 0.4)"
+                      : "1px solid rgba(255,255,255,0.06)",
+                    background: isError
+                      ? "rgba(239, 68, 68, 0.15)"
+                      : isCurrent
+                      ? "rgba(59, 130, 246, 0.15)"
+                      : isPassed
+                      ? "rgba(16, 185, 129, 0.1)"
+                      : "rgba(255,255,255,0.02)",
+                    textAlign: "center",
+                  }}
+                >
+                  <div style={{ fontSize: 14, marginBottom: 2 }}>{s.icon}</div>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: isError ? "#ef4444" : isCurrent ? "#60a5fa" : isPassed ? "#10b981" : "var(--text-muted)",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {s.label}
+                  </div>
+                  <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 2 }}>
+                    {isPassed ? "✅ Đã xong" : isCurrent ? (draft.status === "pending" ? "⏳ Đang đợi" : "⚡ Đang xử lý") : "Chưa chạy"}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Tab Selection */}
+        <div style={{ display: "flex", gap: 8, padding: "8px 24px", background: "rgba(0,0,0,0.08)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <button className={`filter-btn ${activeTab === "progress" ? "active" : ""}`} onClick={() => setActiveTab("progress")} style={{ fontSize: 12 }}>
+            📊 Trạng thái & Vị trí
+          </button>
+          <button className={`filter-btn ${activeTab === "content" ? "active" : ""}`} onClick={() => setActiveTab("content")} style={{ fontSize: 12 }}>
+            📄 Bài viết & Dàn ý ({draft.wordCount || 0} từ)
+          </button>
+          <button className={`filter-btn ${activeTab === "images" ? "active" : ""}`} onClick={() => setActiveTab("images")} style={{ fontSize: 12 }}>
+            🖼️ Hình ảnh
+          </button>
+          <button className={`filter-btn ${activeTab === "debug" ? "active" : ""}`} onClick={() => setActiveTab("debug")} style={{ fontSize: 12 }}>
+            🛠️ Dữ liệu JSON & Lỗi
+          </button>
+        </div>
+
+        {/* Modal Body */}
+        <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
+          {/* TAB 1: PROGRESS & CONTEXT EXPLANATION */}
+          {activeTab === "progress" && (
+            <div>
+              {/* Location & Status explanation card */}
+              <div
+                className="card"
+                style={{
+                  padding: 18,
+                  marginBottom: 16,
+                  borderLeft: `4px solid ${statusInfo.color}`,
+                  background: "rgba(255,255,255,0.02)",
+                }}
+              >
+                <h4 style={{ margin: "0 0 8px", fontSize: 15, color: "var(--text-primary)" }}>
+                  📌 Giải thích trạng thái của bài viết:
+                </h4>
+                <p style={{ margin: "0 0 10px", fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                  {statusInfo.desc}
+                </p>
+
+                {draft.status === "pending" && (
+                  <div
+                    style={{
+                      padding: "10px 14px",
+                      borderRadius: 8,
+                      background: "rgba(59, 130, 246, 0.08)",
+                      border: "1px solid rgba(59, 130, 246, 0.2)",
+                      fontSize: 12,
+                      color: "#93c5fd",
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    💡 <strong>Vì sao có trạng thái này?</strong>
+                    <br />
+                    Khách hàng đã import từ khóa <strong>"{draft.keyword}"</strong> vào danh sách hàng đợi của mục <strong>Tạo bài viết (Pipeline)</strong>.
+                    <br />
+                    Khi khách hàng bấm <strong>"Bắt đầu"</strong> hoặc <strong>"Chạy tự động (Auto-Pipeline)"</strong>, hệ thống AI sẽ kích hoạt và lần lượt chạy qua 6 bước để tạo thành bài viết hoàn chỉnh.
+                  </div>
+                )}
+
+                {draft.error && (
+                  <div
+                    style={{
+                      padding: "10px 14px",
+                      borderRadius: 8,
+                      background: "rgba(239, 68, 68, 0.12)",
+                      border: "1px solid rgba(239, 68, 68, 0.3)",
+                      fontSize: 12,
+                      color: "#f87171",
+                      marginTop: 10,
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    <strong>⚠️ Chi tiết lỗi:</strong> {draft.error}
+                    <br />
+                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                      Gợi ý: Kiểm tra lại số dư quota API Key AI hoặc kết nối mạng trên server.
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Information Grid */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 12,
+                }}
+              >
+                <div className="card" style={{ padding: 14 }}>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>TỪ KHÓA MỤC TIÊU</div>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{draft.keyword}</div>
+                </div>
+
+                <div className="card" style={{ padding: 14 }}>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>BƯỚC HIỆN TẠI</div>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>
+                    Bước {currentStep}/6: {PIPELINE_STEPS[currentStep - 1]?.label || "Chưa xác định"}
+                  </div>
+                </div>
+
+                <div className="card" style={{ padding: 14 }}>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>SỐ TỪ ĐÃ VIẾT</div>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{draft.wordCount || 0} từ</div>
+                </div>
+
+                <div className="card" style={{ padding: 14 }}>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>MÃ BÀI VIẾT (DRAFT ID)</div>
+                  <div style={{ fontSize: 12, fontFamily: "monospace", color: "var(--text-secondary)" }}>
+                    {draft.id}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
-          {draft.article || draft.content ? (
-            <div
-              style={{ fontSize: 14, lineHeight: 1.7 }}
-              dangerouslySetInnerHTML={{ __html: draft.article || draft.content }}
-            />
-          ) : (
-            <pre style={{ background: "rgba(0,0,0,0.3)", padding: 14, borderRadius: 8, fontSize: 12, overflowX: "auto" }}>
-              {JSON.stringify(draft, null, 2)}
-            </pre>
+          {/* TAB 2: OUTLINE & CONTENT */}
+          {activeTab === "content" && (
+            <div>
+              {draft.article || draft.content || draft.html ? (
+                <div
+                  className="article-content-preview"
+                  style={{ fontSize: 14, lineHeight: 1.7, color: "var(--text-primary)" }}
+                  dangerouslySetInnerHTML={{ __html: draft.article || draft.content || draft.html }}
+                />
+              ) : pipeline.outline ? (
+                <div>
+                  <h4 style={{ margin: "0 0 12px", fontSize: 15 }}>📑 Dàn ý bài viết đã tạo:</h4>
+                  <pre style={{ background: "rgba(0,0,0,0.3)", padding: 14, borderRadius: 8, fontSize: 12, overflowX: "auto" }}>
+                    {JSON.stringify(pipeline.outline, null, 2)}
+                  </pre>
+                </div>
+              ) : (
+                <div className="card" style={{ textAlign: "center", padding: "40px 20px" }}>
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>📝</div>
+                  <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>Chưa có nội dung bài viết</div>
+                  <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
+                    Bài viết đang ở trạng thái <strong>{statusInfo.label}</strong> (Bước {currentStep}/6). Nội dung sẽ xuất hiện khi AI hoàn tất bước 3.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: IMAGES */}
+          {activeTab === "images" && (
+            <div>
+              {draft.thumbnail || (draft.images && draft.images.length > 0) ? (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
+                  {draft.thumbnail && (
+                    <div className="card" style={{ padding: 12 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>🖼️ Ảnh Thumbnail:</div>
+                      <img src={draft.thumbnail} alt="Thumbnail" style={{ width: "100%", borderRadius: 8, objectFit: "cover" }} />
+                    </div>
+                  )}
+                  {(draft.images || []).map((img, idx) => (
+                    <div key={idx} className="card" style={{ padding: 12 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>🎨 Ảnh Section #{idx + 1}:</div>
+                      <img src={img.url || img} alt="" style={{ width: "100%", borderRadius: 8, objectFit: "cover" }} />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="card" style={{ textAlign: "center", padding: "40px 20px" }}>
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>🖼️</div>
+                  <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>Chưa tạo hình ảnh</div>
+                  <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
+                    Hình ảnh Thumbnail và Section sẽ được tạo ở bước 4 và bước 5.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 4: RAW JSON & DEBUG */}
+          {activeTab === "debug" && (
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 8 }}>
+                DỮ LIỆU GỐC TRONG SQLITE (READ-ONLY JSON):
+              </div>
+              <pre
+                style={{
+                  background: "rgba(0,0,0,0.35)",
+                  padding: 16,
+                  borderRadius: 8,
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  overflowX: "auto",
+                  border: "1px solid rgba(255,255,255,0.06)",
+                }}
+              >
+                {JSON.stringify(draft, null, 2)}
+              </pre>
+            </div>
           )}
         </div>
       </div>
