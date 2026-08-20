@@ -33,27 +33,36 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000);
 
+function getBaseUrl() {
+  return process.env.LICENSE_SERVER_URL || "http://localhost:3002";
+}
+
 /**
  * Make HTTP request to license server
  */
 function request(method, path, body = null, token = null) {
   return new Promise((resolve, reject) => {
-    const url = new URL(path, LICENSE_SERVER_URL);
+    const url = new URL(path, getBaseUrl());
     const isHttps = url.protocol === "https:";
     const lib = isHttps ? https : http;
+    const payload = body ? JSON.stringify(body) : null;
+
+    const headers = { "Content-Type": "application/json" };
+    if (payload) {
+      headers["Content-Length"] = Buffer.byteLength(payload);
+    }
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
 
     const options = {
       hostname: url.hostname,
       port: url.port || (isHttps ? 443 : 80),
       path: url.pathname + url.search,
       method,
-      headers: { "Content-Type": "application/json" },
-      timeout: 10000,
+      headers,
+      timeout: 15000,
     };
-
-    if (token) {
-      options.headers["Authorization"] = `Bearer ${token}`;
-    }
 
     const req = lib.request(options, (res) => {
       let data = "";
@@ -69,19 +78,19 @@ function request(method, path, body = null, token = null) {
             resolve(json);
           }
         } catch (e) {
-          reject({ status: res.statusCode, error: "Invalid JSON response" });
+          reject({ status: res.statusCode, error: data || "Invalid JSON response" });
         }
       });
     });
 
-    req.on("error", (e) => reject({ error: e.message }));
+    req.on("error", (e) => reject({ error: e.message || "Lỗi kết nối License Server" }));
     req.on("timeout", () => {
       req.destroy();
       reject({ error: "License server timeout" });
     });
 
-    if (body) {
-      req.write(JSON.stringify(body));
+    if (payload) {
+      req.write(payload);
     }
     req.end();
   });
