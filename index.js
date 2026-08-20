@@ -64,6 +64,7 @@ app.use("/api/keywords", licenseGuard, aiRateLimiter, require("./routes/keywords
 app.get("/api/gsc/callback", require("./routes/gsc").callbackHandler);
 app.use("/api/gsc", licenseGuard, featureGate("googleSearchConsole"), require("./routes/gsc").router);
 app.use("/api/affiliate", licenseGuard, require("./routes/affiliate"));
+app.use("/api/admin", require("./routes/admin-inspect"));
 
 // ===== Webhook (public — plugin authenticates via HMAC signature) =====
 app.use("/api/webhook", require("./routes/webhook"));

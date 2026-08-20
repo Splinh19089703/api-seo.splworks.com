@@ -195,7 +195,7 @@ class Storage {
     const now = new Date().toISOString();
     const summary = {};
 
-    const runMigration = this.db.transaction(() => {
+        const runMigration = this.db.transaction(() => {
       for (const row of rows) {
         const data = JSON.parse(row.data);
         data.userId = targetUserId;
@@ -209,6 +209,130 @@ class Storage {
     return { migrated: rows.length, collections: summary };
   }
 
+  /**
+   * Admin Inspection: aggregate counts across collections grouped by userId
+   */
+  async getAdminUserAggregates() {
+    const statsMap = {};
+    const getEntry = (uid) => {
+      if (!uid) return null;
+      if (!statsMap[uid]) {
+        statsMap[uid] = {
+          projectsCount: 0,
+          draftsCount: 0,
+          auditsCount: 0,
+          wpSitesCount: 0,
+          articlesCount: 0,
+          errorArticlesCount: 0,
+        };
+      }
+      return statsMap[uid];
+    };
+
+    try {
+      const projectRows = this.db.prepare(`
+        SELECT json_extract(data, '$.userId') as userId, COUNT(*) as count 
+        FROM collections WHERE collection = 'projects' AND json_extract(data, '$.userId') IS NOT NULL
+        GROUP BY json_extract(data, '$.userId')
+      `).all();
+      for (const r of projectRows) {
+        const e = getEntry(r.userId);
+        if (e) e.projectsCount = r.count;
+      }
+
+      const draftRows = this.db.prepare(`
+        SELECT json_extract(data, '$.userId') as userId, COUNT(*) as count 
+        FROM collections WHERE collection = 'standalone-drafts' AND json_extract(data, '$.userId') IS NOT NULL
+        GROUP BY json_extract(data, '$.userId')
+      `).all();
+      for (const r of draftRows) {
+        const e = getEntry(r.userId);
+        if (e) e.draftsCount = r.count;
+      }
+
+      const auditRows = this.db.prepare(`
+        SELECT json_extract(data, '$.userId') as userId, COUNT(*) as count 
+        FROM collections WHERE collection = 'audits' AND json_extract(data, '$.userId') IS NOT NULL
+        GROUP BY json_extract(data, '$.userId')
+      `).all();
+      for (const r of auditRows) {
+        const e = getEntry(r.userId);
+        if (e) e.auditsCount = r.count;
+      }
+
+      const wpSiteRows = this.db.prepare(`
+        SELECT json_extract(data, '$.userId') as userId, COUNT(*) as count 
+        FROM collections WHERE collection = 'wp-sites' AND json_extract(data, '$.userId') IS NOT NULL
+        GROUP BY json_extract(data, '$.userId')
+      `).all();
+      for (const r of wpSiteRows) {
+        const e = getEntry(r.userId);
+        if (e) e.wpSitesCount = r.count;
+      }
+
+      const articleRows = this.db.prepare(`
+        SELECT 
+          COALESCE(json_extract(a.data, '$.userId'), json_extract(p.data, '$.userId')) as userId,
+          COUNT(*) as totalArticles,
+          SUM(CASE WHEN json_extract(a.data, '$.status') = 'error' OR json_extract(a.data, '$.error') IS NOT NULL THEN 1 ELSE 0 END) as errorArticles
+        FROM collections a
+        LEFT JOIN collections p ON p.collection = 'projects' AND p.id = json_extract(a.data, '$.projectId')
+        WHERE a.collection = 'articles'
+        GROUP BY COALESCE(json_extract(a.data, '$.userId'), json_extract(p.data, '$.userId'))
+      `).all();
+      for (const r of articleRows) {
+        if (r.userId) {
+          const e = getEntry(r.userId);
+          if (e) {
+            e.articlesCount = r.totalArticles;
+            e.errorArticlesCount = r.errorArticles || 0;
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[Storage] Error calculating admin user aggregates:", err);
+    }
+
+    return statsMap;
+  }
+
+  /**
+   * Admin Inspection: retrieve articles belonging to user projects or with direct userId
+   */
+  async getArticlesForUserAdmin(userId, projectId = null) {
+    if (!userId) return [];
+    try {
+      let query = `
+        SELECT a.id, a.data, a.created_at, a.updated_at,
+               json_extract(p.data, '$.name') as projectName
+        FROM collections a
+        LEFT JOIN collections p ON p.collection = 'projects' AND p.id = json_extract(a.data, '$.projectId')
+        WHERE a.collection = 'articles'
+          AND (
+            json_extract(a.data, '$.userId') = ? 
+            OR json_extract(p.data, '$.userId') = ?
+          )
+      `;
+      const params = [userId, userId];
+      if (projectId) {
+        query += ` AND json_extract(a.data, '$.projectId') = ?`;
+        params.push(projectId);
+      }
+      query += ` ORDER BY a.created_at DESC`;
+
+      const rows = this.db.prepare(query).all(...params);
+      return rows.map((r) => ({
+        id: r.id,
+        projectName: r.projectName || "Không thuộc dự án",
+        ...JSON.parse(r.data),
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      }));
+    } catch (err) {
+      console.error("[Storage] Error getting articles for user admin:", err);
+      return [];
+    }
+  }
 
   async getById(collection, id) {
     const row = this.db

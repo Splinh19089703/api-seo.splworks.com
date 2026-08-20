@@ -286,6 +286,9 @@ module.exports = {
   clearToken,
   clearCache,
 
+  // ===== Admin APIs =====
+  adminGetUsers: (token) => request("GET", "/admin/users", null, token),
+
   // ===== Affiliate / CTV =====
   getAffiliateLink: (token) => request("GET", "/affiliate/my-link", null, token),
   getAffiliateStats: (token) => request("GET", "/affiliate/my-stats", null, token),

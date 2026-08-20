@@ -76,8 +76,8 @@ async function licenseGuard(req, res, next) {
     req.usage = result.usage;
     req.authToken = token;
     req.userId = result.userId || "unknown";
-    req.isAdmin = isAdminUser(req.userId);
-    req.user = { id: req.userId, isAdmin: req.isAdmin };
+    req.isAdmin = isAdminUser(req.userId) || result.user?.role === "admin" || result.role === "admin";
+    req.user = { id: req.userId, isAdmin: req.isAdmin, role: req.isAdmin ? "admin" : (result.user?.role || "user") };
     if (!result.userId || result.userId === "unknown") {
       return res.status(401).json({
         error: "Không xác định được người dùng",
