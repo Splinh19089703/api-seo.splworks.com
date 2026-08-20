@@ -377,11 +377,26 @@ router.get("/prompts", async (req, res) => {
 
 router.post("/prompts", async (req, res) => {
   try {
+    const { name, type, content, isDefault } = req.body;
+    if (!name || !name.trim() || !content || !content.trim() || !type) {
+      return res.status(400).json({ error: "Vui lòng điền đầy đủ tên, loại và nội dung prompt" });
+    }
+
+    // If marked as default, unset isDefault for other prompts of same type
+    if (isDefault) {
+      const allPrompts = await storage.getAllForUser("prompts", req.userId);
+      for (const p of allPrompts) {
+        if (p.type === type && p.isDefault) {
+          await storage.update("prompts", p.id, { isDefault: false });
+        }
+      }
+    }
+
     const prompt = await storage.createForUser("prompts", {
-      name: req.body.name,
-      type: req.body.type,
-      content: req.body.content,
-      isDefault: req.body.isDefault || false,
+      name: name.trim(),
+      type,
+      content: content.trim(),
+      isDefault: Boolean(isDefault),
     }, req.userId);
     res.status(201).json(prompt);
   } catch (error) {
@@ -391,11 +406,37 @@ router.post("/prompts", async (req, res) => {
 
 router.put("/prompts/:id", async (req, res) => {
   try {
-    const existing = await storage.getByIdForUser("prompts", req.params.id, req.userId);
-    if (!existing) return res.status(404).json({ error: "Prompt not found" });
+    let existing = await storage.getByIdForUser("prompts", req.params.id, req.userId);
+    if (!existing) {
+      const raw = await storage.getById("prompts", req.params.id);
+      if (raw && (!raw.userId || req.isAdmin)) {
+        existing = raw;
+      }
+    }
+    if (!existing) return res.status(404).json({ error: "Prompt không tồn tại" });
+
     const { userId: _userId, ...updates } = req.body;
-    const prompt = await storage.update("prompts", req.params.id, updates);
-    if (!prompt) return res.status(404).json({ error: "Prompt not found" });
+    const targetType = updates.type || existing.type;
+
+    // If updating to default, unset isDefault for other prompts of same type
+    if (updates.isDefault) {
+      const allPrompts = await storage.getAllForUser("prompts", req.userId);
+      for (const p of allPrompts) {
+        if (p.type === targetType && p.id !== req.params.id && p.isDefault) {
+          await storage.update("prompts", p.id, { isDefault: false });
+        }
+      }
+    }
+
+    const cleanUpdates = {};
+    if (updates.name !== undefined) cleanUpdates.name = updates.name.trim();
+    if (updates.type !== undefined) cleanUpdates.type = updates.type;
+    if (updates.content !== undefined) cleanUpdates.content = updates.content.trim();
+    if (updates.isDefault !== undefined) cleanUpdates.isDefault = Boolean(updates.isDefault);
+    cleanUpdates.userId = req.userId || existing.userId;
+
+    const prompt = await storage.update("prompts", req.params.id, cleanUpdates);
+    if (!prompt) return res.status(404).json({ error: "Prompt không tồn tại" });
     res.json(prompt);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -404,8 +445,14 @@ router.put("/prompts/:id", async (req, res) => {
 
 router.delete("/prompts/:id", async (req, res) => {
   try {
-    const prompt = await storage.getByIdForUser("prompts", req.params.id, req.userId);
-    if (!prompt) return res.status(404).json({ error: "Prompt not found" });
+    let prompt = await storage.getByIdForUser("prompts", req.params.id, req.userId);
+    if (!prompt) {
+      const raw = await storage.getById("prompts", req.params.id);
+      if (raw && (!raw.userId || req.isAdmin)) {
+        prompt = raw;
+      }
+    }
+    if (!prompt) return res.status(404).json({ error: "Prompt không tồn tại" });
     await storage.delete("prompts", req.params.id);
     res.json({ success: true });
   } catch (error) {
