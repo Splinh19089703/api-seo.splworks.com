@@ -90,6 +90,13 @@ export default function Account() {
     navigate("/login", { replace: true });
   };
 
+  const isGoogleAccount = Boolean(
+    user?.isGoogleAccount ||
+    user?.googleId ||
+    (user?.avatarUrl && user?.avatarUrl.includes("googleusercontent")) ||
+    (user?.email && user?.email.includes("@gmail.com"))
+  );
+
   const handleChangePassword = async (e) => {
     e.preventDefault();
     setPwError("");
@@ -103,10 +110,13 @@ export default function Account() {
     }
     setPwLoading(true);
     try {
-      await api.changePassword(pwForm.currentPassword, pwForm.newPassword);
+      await api.changePassword(
+        isGoogleAccount ? "" : pwForm.currentPassword,
+        pwForm.newPassword
+      );
       setShowChangePassword(false);
       setPwForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
-      alert("✅ Đổi mật khẩu thành công!");
+      alert("✅ Thiết lập mật khẩu thành công! Bạn có thể dùng mật khẩu này để đăng nhập cùng email.");
     } catch (e) {
       setPwError(e.message || "Lỗi đổi mật khẩu");
     }
@@ -189,7 +199,7 @@ export default function Account() {
               className="btn btn-secondary btn-sm"
               onClick={() => setShowChangePassword(!showChangePassword)}
             >
-              🔒 Đổi mật khẩu
+              {isGoogleAccount ? "🔑 Tạo mật khẩu đăng nhập" : "🔒 Đổi mật khẩu"}
             </button>
             <button className="btn btn-danger btn-sm" onClick={handleLogout}>
               Đăng xuất
@@ -201,7 +211,14 @@ export default function Account() {
       {/* Change Password Form */}
       {showChangePassword && (
         <div className="card" style={{ marginBottom: 16 }}>
-          <h3 style={{ fontSize: 15, marginBottom: 12 }}>🔒 Đổi mật khẩu</h3>
+          <h3 style={{ fontSize: 15, marginBottom: 8 }}>
+            {isGoogleAccount ? "🔑 Tạo mật khẩu cho tài khoản Google" : "🔒 Đổi mật khẩu"}
+          </h3>
+          {isGoogleAccount && (
+            <p style={{ fontSize: 13, color: "#60a5fa", margin: "0 0 12px", background: "rgba(59,130,246,0.1)", padding: "8px 12px", borderRadius: 6 }}>
+              💡 Tài khoản của bạn liên kết Google ({user.email}). Bạn không cần nhập mật khẩu cũ, chỉ cần nhập mật khẩu mới dưới đây để có thể đăng nhập bằng cả Google và Email + Mật khẩu.
+            </p>
+          )}
           {pwError && (
             <div className="auth-error" style={{ marginBottom: 12 }}>
               <span>⚠️</span> {pwError}
@@ -211,24 +228,27 @@ export default function Account() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 1fr 1fr",
+                gridTemplateColumns: isGoogleAccount ? "1fr 1fr" : "1fr 1fr 1fr",
                 gap: 12,
               }}
             >
-              <div className="form-group">
-                <label>Mật khẩu hiện tại</label>
-                <input
-                  type="password"
-                  value={pwForm.currentPassword}
-                  onChange={(e) =>
-                    setPwForm({ ...pwForm, currentPassword: e.target.value })
-                  }
-                />
-              </div>
+              {!isGoogleAccount && (
+                <div className="form-group">
+                  <label>Mật khẩu hiện tại</label>
+                  <input
+                    type="password"
+                    value={pwForm.currentPassword}
+                    onChange={(e) =>
+                      setPwForm({ ...pwForm, currentPassword: e.target.value })
+                    }
+                  />
+                </div>
+              )}
               <div className="form-group">
                 <label>Mật khẩu mới</label>
                 <input
                   type="password"
+                  placeholder="Ít nhất 6 ký tự"
                   value={pwForm.newPassword}
                   onChange={(e) =>
                     setPwForm({ ...pwForm, newPassword: e.target.value })
@@ -236,9 +256,10 @@ export default function Account() {
                 />
               </div>
               <div className="form-group">
-                <label>Xác nhận</label>
+                <label>Xác nhận mật khẩu</label>
                 <input
                   type="password"
+                  placeholder="Nhập lại mật khẩu mới"
                   value={pwForm.confirmPassword}
                   onChange={(e) =>
                     setPwForm({ ...pwForm, confirmPassword: e.target.value })
@@ -247,7 +268,7 @@ export default function Account() {
               </div>
             </div>
             <div
-              style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}
+              style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}
             >
               <button
                 type="button"
