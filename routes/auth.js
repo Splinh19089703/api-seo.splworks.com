@@ -27,8 +27,9 @@ router.post("/login", async (req, res) => {
     const result = await licenseClient.login(email, password);
     res.json(result);
   } catch (error) {
+    console.error("[Auth Route /login] Error:", error);
     const status = error.status || 500;
-    res.status(status).json({ error: error.error || "Đăng nhập thất bại" });
+    res.status(status).json({ error: error.error || error.message || "Đăng nhập thất bại" });
   }
 });
 
@@ -44,8 +45,9 @@ router.post("/register", async (req, res) => {
     const result = await licenseClient.register(email, password, name, referredBy);
     res.json(result);
   } catch (error) {
+    console.error("[Auth Route /register] Error:", error);
     const status = error.status || 500;
-    res.status(status).json({ error: error.error || "Đăng ký thất bại" });
+    res.status(status).json({ error: error.error || error.message || "Đăng ký thất bại" });
   }
 });
 
@@ -62,8 +64,9 @@ router.post("/google", async (req, res) => {
     const result = await licenseClient.googleLogin(idToken, referralCode);
     res.json(result);
   } catch (error) {
+    console.error("[Auth Route /google] Error:", error);
     const status = error.status || 500;
-    res.status(status).json({ error: error.error || "Đăng nhập Google thất bại" });
+    res.status(status).json({ error: error.error || error.message || "Đăng nhập Google thất bại" });
   }
 });
 
