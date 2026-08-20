@@ -525,6 +525,7 @@ export const api = {
   // ===== Admin User Inspection (Read-Only) =====
   getAdminUsers: () => fetchApi("/admin/users"),
   getAdminUserSummary: (userId) => fetchApi(`/admin/users/${userId}/summary`),
+  getAdminUserCredits: (userId) => fetchApi(`/admin/users/${userId}/credits`),
   getAdminUserProjects: (userId) => fetchApi(`/admin/users/${userId}/projects`),
   getAdminProjectArticles: (userId, projectId) => fetchApi(`/admin/users/${userId}/projects/${projectId}/articles`),
   getAdminArticleDetail: (userId, articleId) => fetchApi(`/admin/users/${userId}/articles/${articleId}`),

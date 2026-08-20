@@ -347,8 +347,9 @@ export default function AdminUsers() {
                 </div>
 
                 {/* Center: License & Plan Info */}
-                <div style={{ minWidth: 180 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                {/* Center: License & Credit Usage */}
+                <div style={{ minWidth: 220, display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <span
                       className={`badge ${
                         u.license?.plan === "unlimited"
@@ -373,10 +374,35 @@ export default function AdminUsers() {
                       {isPlanActive ? "🟢 Active" : "🔴 Expired"}
                     </span>
                   </div>
-                  <div style={{ fontSize: 11, color: "var(--text-muted, #64748b)" }}>
-                    {u.license?.expiresAt
-                      ? `Hết hạn: ${new Date(u.license.expiresAt).toLocaleDateString("vi-VN")}`
-                      : "Thời hạn: Vĩnh viễn (Lifetime)"}
+
+                  {/* Monthly Credit / AI Calls Meter */}
+                  <div
+                    style={{
+                      background: "rgba(255,255,255,0.04)",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      padding: "6px 10px",
+                      borderRadius: 6,
+                      fontSize: 11,
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                      <span style={{ color: "var(--text-muted, #94a3b8)" }}>⚡ AI Calls (Tháng):</span>
+                      <span style={{ fontWeight: 700, color: "#38bdf8" }}>
+                        {u.usage?.aiCalls || 0} /{" "}
+                        {u.license?.limits?.aiCreditsPerMonth >= 999999
+                          ? "∞"
+                          : (u.license?.limits?.aiCreditsPerMonth || 100).toLocaleString()}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ color: "var(--text-muted, #94a3b8)" }}>📝 Bài viết:</span>
+                      <span style={{ fontWeight: 700, color: "#a78bfa" }}>
+                        {u.usage?.articlesCreated || 0} /{" "}
+                        {u.license?.limits?.maxArticlesPerMonth >= 999999
+                          ? "∞"
+                          : (u.license?.limits?.maxArticlesPerMonth || 10).toLocaleString()}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -461,7 +487,7 @@ export default function AdminUsers() {
  * Inspection Modal for deep-diving into a customer's data
  */
 function UserInspectionModal({ user, onClose }) {
-  const [activeTab, setActiveTab] = useState("projects");
+  const [activeTab, setActiveTab] = useState("credits");
   const [summary, setSummary] = useState(null);
   const [loadingSummary, setLoadingSummary] = useState(true);
 
@@ -717,6 +743,7 @@ function UserInspectionModal({ user, onClose }) {
           }}
         >
           {[
+            { id: "credits", label: "💳 Hạn mức & Credit", icon: "💳" },
             { id: "projects", label: "📁 Dự án & Bài viết", icon: "📁", count: user.stats?.projectsCount || 0 },
             { id: "drafts", label: "✍️ Bài viết Pipeline (Drafts)", icon: "✍️", count: user.stats?.draftsCount || 0 },
             { id: "audits", label: "🔍 SEO Audits", icon: "🔍", count: user.stats?.auditsCount || 0 },
@@ -736,22 +763,27 @@ function UserInspectionModal({ user, onClose }) {
               }}
             >
               <span>{t.label}</span>
-              <span
-                style={{
-                  fontSize: 11,
-                  padding: "1px 6px",
-                  borderRadius: 10,
-                  background: activeTab === t.id ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.08)",
-                }}
-              >
-                {t.count}
-              </span>
+              {t.count !== undefined && (
+                <span
+                  style={{
+                    fontSize: 11,
+                    padding: "1px 6px",
+                    borderRadius: 10,
+                    background: activeTab === t.id ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.08)",
+                  }}
+                >
+                  {t.count}
+                </span>
+              )}
             </button>
           ))}
         </div>
 
         {/* Modal Body Content */}
         <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
+          {/* TAB 0: CREDITS & USAGE */}
+          {activeTab === "credits" && <UserCreditsTab user={user} />}
+
           {/* TAB 1: PROJECTS & ARTICLES */}
           {activeTab === "projects" && (
             <div>
@@ -1132,6 +1164,345 @@ function UserInspectionModal({ user, onClose }) {
       {viewingDraft && (
         <DraftReaderModal draft={viewingDraft} onClose={() => setViewingDraft(null)} />
       )}
+    </div>
+  );
+}
+
+/**
+ * Tab: Thống kê Credit, Hạn mức & Bản quyền người dùng
+ */
+function UserCreditsTab({ user }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    async function loadCredits() {
+      try {
+        setLoading(true);
+        setError(null);
+        const res = await api.getAdminUserCredits(user.id);
+        if (res) setData(res);
+      } catch (err) {
+        console.error("Lỗi lấy thông tin credits:", err);
+        setError(err.message || "Không thể tải thông tin credit");
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadCredits();
+  }, [user.id]);
+
+  if (loading) {
+    return (
+      <div style={{ textAlign: "center", padding: 60 }}>
+        <span className="loader" />
+        <div style={{ marginTop: 12, fontSize: 13, color: "var(--text-secondary, #94a3b8)" }}>
+          Đang tính toán thống kê Credit & Hạn mức...
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ padding: 20, background: "rgba(239,68,68,0.1)", color: "#ef4444", borderRadius: 8 }}>
+        ❌ {error}
+      </div>
+    );
+  }
+
+  const lic = data?.license || user.license || {};
+  const limits = lic.limits || {};
+  const currentUsage = data?.currentUsage || { articlesCreated: 0, articlesPublished: 0, aiCalls: 0 };
+  const sqliteMetrics = data?.sqliteMetrics || {
+    totalWords: 0,
+    totalImages: 0,
+    totalArticles: 0,
+    totalDrafts: 0,
+    totalProjects: 0,
+    totalAudits: 0,
+    publishedArticles: 0,
+    failedArticles: 0,
+  };
+  const usageHistory = data?.usageHistory || [];
+  const features = lic.features || {};
+
+  const isUnlimitedAi = (limits.aiCreditsPerMonth || 0) >= 999999;
+  const isUnlimitedArticles = (limits.maxArticlesPerMonth || 0) >= 999999;
+  const isUnlimitedProjects = (limits.maxProjects || 0) >= 999999;
+
+  const aiPercent = isUnlimitedAi ? 0 : Math.min(100, Math.round((currentUsage.aiCalls / (limits.aiCreditsPerMonth || 1)) * 100));
+  const artPercent = isUnlimitedArticles ? 0 : Math.min(100, Math.round((currentUsage.articlesCreated / (limits.maxArticlesPerMonth || 1)) * 100));
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      {/* SECTION 1: MONTHLY LIMITS & LIVE GAUGES */}
+      <div>
+        <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 14px", display: "flex", alignItems: "center", gap: 8 }}>
+          <span>⚡</span> Hạn Mức & Credit Tháng Này ({new Date().toISOString().slice(0, 7)})
+        </h3>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+          {/* Card 1: AI Calls / Credits */}
+          <div
+            className="card"
+            style={{
+              padding: 16,
+              background: "linear-gradient(135deg, rgba(56, 189, 248, 0.08), rgba(59, 130, 246, 0.04))",
+              border: "1px solid rgba(56, 189, 248, 0.2)",
+            }}
+          >
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "flex", justifyContent: "space-between" }}>
+              <span>⚡ Lượt gọi AI (AI Calls)</span>
+              <span style={{ fontWeight: 600, color: "#38bdf8" }}>{isUnlimitedAi ? "Không giới hạn" : `${aiPercent}%`}</span>
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: "#38bdf8", marginBottom: 8 }}>
+              {currentUsage.aiCalls.toLocaleString()} <span style={{ fontSize: 13, fontWeight: 400, color: "var(--text-muted)" }}>/ {isUnlimitedAi ? "∞" : (limits.aiCreditsPerMonth || 100).toLocaleString()}</span>
+            </div>
+            {!isUnlimitedAi && (
+              <div style={{ width: "100%", height: 6, background: "rgba(255,255,255,0.08)", borderRadius: 4, overflow: "hidden" }}>
+                <div style={{ width: `${aiPercent}%`, height: "100%", background: aiPercent > 90 ? "#ef4444" : aiPercent > 70 ? "#f59e0b" : "#38bdf8", transition: "width 0.3s" }} />
+              </div>
+            )}
+          </div>
+
+          {/* Card 2: Articles Limit */}
+          <div
+            className="card"
+            style={{
+              padding: 16,
+              background: "linear-gradient(135deg, rgba(168, 85, 247, 0.08), rgba(139, 92, 246, 0.04))",
+              border: "1px solid rgba(168, 85, 247, 0.2)",
+            }}
+          >
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6, display: "flex", justifyContent: "space-between" }}>
+              <span>📝 Bài viết trong tháng</span>
+              <span style={{ fontWeight: 600, color: "#a855f7" }}>{isUnlimitedArticles ? "Không giới hạn" : `${artPercent}%`}</span>
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: "#a855f7", marginBottom: 8 }}>
+              {currentUsage.articlesCreated.toLocaleString()} <span style={{ fontSize: 13, fontWeight: 400, color: "var(--text-muted)" }}>/ {isUnlimitedArticles ? "∞" : (limits.maxArticlesPerMonth || 10).toLocaleString()}</span>
+            </div>
+            {!isUnlimitedArticles && (
+              <div style={{ width: "100%", height: 6, background: "rgba(255,255,255,0.08)", borderRadius: 4, overflow: "hidden" }}>
+                <div style={{ width: `${artPercent}%`, height: "100%", background: artPercent > 90 ? "#ef4444" : artPercent > 70 ? "#f59e0b" : "#a855f7", transition: "width 0.3s" }} />
+              </div>
+            )}
+          </div>
+
+          {/* Card 3: Published Articles */}
+          <div
+            className="card"
+            style={{
+              padding: 16,
+              background: "linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(5, 150, 105, 0.04))",
+              border: "1px solid rgba(16, 185, 129, 0.2)",
+            }}
+          >
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6 }}>
+              <span>📤 Đã xuất bản lên WordPress</span>
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: "#10b981", marginBottom: 8 }}>
+              {currentUsage.articlesPublished.toLocaleString()} <span style={{ fontSize: 13, fontWeight: 400, color: "var(--text-muted)" }}>bài viết</span>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Tự động đăng qua REST API</div>
+          </div>
+
+          {/* Card 4: Projects & Audits Quota */}
+          <div
+            className="card"
+            style={{
+              padding: 16,
+              background: "linear-gradient(135deg, rgba(245, 158, 11, 0.08), rgba(217, 119, 6, 0.04))",
+              border: "1px solid rgba(245, 158, 11, 0.2)",
+            }}
+          >
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6 }}>
+              <span>📁 Dự án & Thiết bị</span>
+            </div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#f59e0b", marginBottom: 4 }}>
+              Dự án: {sqliteMetrics.totalProjects} / {isUnlimitedProjects ? "∞" : (limits.maxProjects || 2)}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+              Thiết bị tối đa: <strong>{limits.maxDevices || 1}</strong> • Audit: <strong>{(limits.maxAudits || 3) >= 999999 ? "∞" : (limits.maxAudits || 3)}</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION 2: REAL PRODUCTION ACTIVITY METRICS (SQLite) */}
+      <div>
+        <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 14px", display: "flex", alignItems: "center", gap: 8 }}>
+          <span>📊</span> Sản Lượng Dữ Liệu Thực Tế (Toàn Thời Gian)
+        </h3>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+          <div className="card" style={{ padding: 14, textAlign: "center", background: "rgba(255,255,255,0.02)" }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#38bdf8" }}>
+              {sqliteMetrics.totalWords.toLocaleString()}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>✍️ Tổng số từ AI đã viết</div>
+          </div>
+
+          <div className="card" style={{ padding: 14, textAlign: "center", background: "rgba(255,255,255,0.02)" }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#ec4899" }}>
+              {sqliteMetrics.totalImages.toLocaleString()}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>🎨 Tổng số hình ảnh AI đã tạo</div>
+          </div>
+
+          <div className="card" style={{ padding: 14, textAlign: "center", background: "rgba(255,255,255,0.02)" }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#a855f7" }}>
+              {sqliteMetrics.totalArticles + sqliteMetrics.totalDrafts}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>📚 Tổng bài viết đang lưu</div>
+          </div>
+
+          <div className="card" style={{ padding: 14, textAlign: "center", background: "rgba(255,255,255,0.02)" }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#10b981" }}>
+              {sqliteMetrics.publishedArticles}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>✅ Đã xuất bản lên WP</div>
+          </div>
+
+          <div className="card" style={{ padding: 14, textAlign: "center", background: sqliteMetrics.failedArticles > 0 ? "rgba(239,68,68,0.06)" : "rgba(255,255,255,0.02)", border: sqliteMetrics.failedArticles > 0 ? "1px solid rgba(239,68,68,0.3)" : undefined }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: sqliteMetrics.failedArticles > 0 ? "#ef4444" : "var(--text-muted)" }}>
+              {sqliteMetrics.failedArticles}
+            </div>
+            <div style={{ fontSize: 12, color: sqliteMetrics.failedArticles > 0 ? "#ef4444" : "var(--text-muted)", marginTop: 4 }}>⚠️ Bài viết phát sinh lỗi</div>
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION 3: MONTHLY USAGE HISTORY TABLE */}
+      <div>
+        <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 14px", display: "flex", alignItems: "center", gap: 8 }}>
+          <span>📅</span> Lịch Sử Sử Dụng Theo Tháng (MongoDB Usage Log)
+        </h3>
+
+        {usageHistory.length === 0 ? (
+          <div className="card" style={{ padding: 24, textAlign: "center", color: "var(--text-secondary)" }}>
+            Chưa có lịch sử sử dụng các tháng trước.
+          </div>
+        ) : (
+          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: "rgba(0,0,0,0.2)", textAlign: "left", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                  <th style={{ padding: "10px 16px" }}>Tháng</th>
+                  <th style={{ padding: "10px 16px" }}>Lượt gọi AI (Calls)</th>
+                  <th style={{ padding: "10px 16px" }}>Bài viết đã tạo</th>
+                  <th style={{ padding: "10px 16px" }}>Bài viết đã đăng WP</th>
+                  <th style={{ padding: "10px 16px" }}>Tình trạng</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usageHistory.map((row, idx) => (
+                  <tr key={idx} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                    <td style={{ padding: "10px 16px", fontWeight: 600, color: "var(--text-primary)" }}>
+                      {row.month}
+                    </td>
+                    <td style={{ padding: "10px 16px", color: "#38bdf8", fontWeight: 600 }}>
+                      {(row.aiCalls || 0).toLocaleString()}
+                    </td>
+                    <td style={{ padding: "10px 16px", color: "#a855f7", fontWeight: 600 }}>
+                      {(row.articlesCreated || 0).toLocaleString()}
+                    </td>
+                    <td style={{ padding: "10px 16px", color: "#10b981", fontWeight: 600 }}>
+                      {(row.articlesPublished || 0).toLocaleString()}
+                    </td>
+                    <td style={{ padding: "10px 16px" }}>
+                      <span className="badge badge-success" style={{ fontSize: 10, padding: "2px 6px" }}>
+                        Hợp lệ
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* SECTION 4: LICENSE DETAILS & FEATURE GATES */}
+      <div>
+        <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 14px", display: "flex", alignItems: "center", gap: 8 }}>
+          <span>🛡️</span> Thông Tin Bản Quyền & Tính Năng Được Mở
+        </h3>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          {/* License meta */}
+          <div className="card" style={{ padding: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "#fff" }}>Thông tin License Key</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--text-muted)" }}>Gói cước:</span>
+                <span style={{ fontWeight: 700, color: "#38bdf8" }}>{(lic.plan || "trial").toUpperCase()}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--text-muted)" }}>Kỳ hạn:</span>
+                <span>{lic.period === "lifetime" ? "Vĩnh viễn (Lifetime)" : lic.period}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--text-muted)" }}>Mã License:</span>
+                <code style={{ fontSize: 11, background: "rgba(0,0,0,0.3)", padding: "2px 6px", borderRadius: 4 }}>
+                  {lic.licenseKey || "—"}
+                </code>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--text-muted)" }}>Trạng thái:</span>
+                <span style={{ color: lic.status === "active" ? "#10b981" : "#ef4444", fontWeight: 600 }}>
+                  {lic.status === "active" ? "🟢 Đang hoạt động" : "🔴 " + lic.status}
+                </span>
+              </div>
+              {lic.expiresAt && (
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "var(--text-muted)" }}>Ngày hết hạn:</span>
+                  <span>{new Date(lic.expiresAt).toLocaleDateString("vi-VN")}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Features grid */}
+          <div className="card" style={{ padding: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "#fff" }}>Quyền hạn tính năng (Feature Gates)</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontSize: 11 }}>
+              {[
+                { key: "aiWriting", label: "Viết bài AI" },
+                { key: "aiImage", label: "Tạo ảnh AI" },
+                { key: "wpPublish", label: "Đăng bài WordPress" },
+                { key: "multiPlatform", label: "Đa nền tảng" },
+                { key: "internalLinks", label: "Liên kết nội bộ" },
+                { key: "seoAudit", label: "SEO Audit" },
+                { key: "googleSearchConsole", label: "Google Search Console" },
+                { key: "sharedAiPool", label: "Dùng chung AI Pool" },
+                { key: "bringYourOwnKey", label: "Tự cấu hình API Key" },
+                { key: "priorityAiPool", label: "AI Pool Ưu Tiên" },
+              ].map((f) => {
+                const enabled = Boolean(features[f.key]);
+                return (
+                  <div
+                    key={f.key}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "4px 6px",
+                      borderRadius: 4,
+                      background: enabled ? "rgba(16, 185, 129, 0.08)" : "rgba(255,255,255,0.02)",
+                      color: enabled ? "#10b981" : "var(--text-muted)",
+                    }}
+                  >
+                    <span>{enabled ? "✅" : "⚪"}</span>
+                    <span>{f.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
