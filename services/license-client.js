@@ -307,6 +307,7 @@ module.exports = {
 
   // ===== Admin APIs =====
   adminGetUsers: (token) => request("GET", "/admin/users", null, token),
+  adminGetUserCredits: (token, userId) => request("GET", `/admin/users/${userId}/credits`, null, token),
 
   // ===== Affiliate / CTV =====
   getAffiliateLink: (token) => request("GET", "/affiliate/my-link", null, token),

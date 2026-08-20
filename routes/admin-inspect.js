@@ -28,6 +28,7 @@ router.get("/users", async (req, res) => {
   try {
     let licenseUsers = [];
     let licenseMap = {};
+    let usageMap = {};
 
     // 1. Fetch from License Server
     try {
@@ -43,6 +44,12 @@ router.get("/users", async (req, res) => {
           }
         }
       }
+      if (response && Array.isArray(response.usages)) {
+        for (const usg of response.usages) {
+          const licId = String(usg.licenseId || "");
+          if (licId) usageMap[licId] = usg;
+        }
+      }
     } catch (err) {
       console.warn("[AdminInspect] Could not fetch users from license server:", err.message || err);
     }
@@ -56,6 +63,7 @@ router.get("/users", async (req, res) => {
     for (const u of licenseUsers) {
       const uId = String(u._id || u.id);
       const lic = licenseMap[uId] || null;
+      const currentUsage = lic ? (usageMap[String(lic._id || lic.id)] || null) : null;
       const stats = aggregates[uId] || {
         projectsCount: 0,
         articlesCount: 0,
@@ -82,6 +90,13 @@ router.get("/users", async (req, res) => {
               limits: lic.limits || {},
             }
           : null,
+        usage: currentUsage
+          ? {
+              articlesCreated: currentUsage.articlesCreated || 0,
+              articlesPublished: currentUsage.articlesPublished || 0,
+              aiCalls: currentUsage.aiCalls || 0,
+            }
+          : { articlesCreated: 0, articlesPublished: 0, aiCalls: 0 },
         stats,
       });
     }
@@ -97,6 +112,7 @@ router.get("/users", async (req, res) => {
           avatarUrl: null,
           createdAt: null,
           license: null,
+          usage: { articlesCreated: 0, articlesPublished: 0, aiCalls: 0 },
           stats,
         });
       }
@@ -163,6 +179,76 @@ router.get("/users/:userId/summary", async (req, res) => {
   } catch (error) {
     console.error("[AdminInspect] Error fetching user summary:", error);
     res.status(500).json({ error: "Lỗi lấy tóm tắt user: " + error.message });
+  }
+});
+
+/**
+ * GET /api/admin/users/:userId/credits
+ * Returns detailed credits, limits, monthly usage history, and SQLite content metrics
+ */
+router.get("/users/:userId/credits", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    let license = null;
+    let usageHistory = [];
+
+    try {
+      const resp = await licenseClient.adminGetUserCredits(req.authToken, userId);
+      if (resp) {
+        license = resp.license;
+        usageHistory = resp.usageHistory || [];
+      }
+    } catch (err) {
+      console.warn("[AdminInspect] Could not fetch credits from license server:", err.message);
+    }
+
+    // SQLite aggregates
+    const allArticles = await storage.getArticlesForUserAdmin(userId);
+    const drafts = await storage.getAllForUser("standalone-drafts", userId);
+    const audits = await storage.getAllForUser("audits", userId);
+    const projects = await storage.getAllForUser("projects", userId);
+
+    let totalWords = 0;
+    let totalImages = 0;
+    let publishedArticles = 0;
+    let failedArticles = 0;
+
+    for (const a of allArticles) {
+      totalWords += parseInt(a.wordCount) || 0;
+      if (a.thumbnail) totalImages++;
+      if (Array.isArray(a.images)) totalImages += a.images.length;
+      if (a.status === "published" || a.wpPostId) publishedArticles++;
+      if (a.status === "error" || a.error) failedArticles++;
+    }
+
+    for (const d of drafts) {
+      totalWords += parseInt(d.wordCount) || 0;
+      if (d.thumbnail) totalImages++;
+      if (Array.isArray(d.images)) totalImages += d.images.length;
+      if (d.status === "published") publishedArticles++;
+      if (d.status === "error" || d.error) failedArticles++;
+    }
+
+    res.json({
+      success: true,
+      userId,
+      license,
+      usageHistory,
+      currentUsage: usageHistory[0] || { articlesCreated: 0, articlesPublished: 0, aiCalls: 0 },
+      sqliteMetrics: {
+        totalWords,
+        totalImages,
+        totalArticles: allArticles.length,
+        totalDrafts: drafts.length,
+        totalProjects: projects.length,
+        totalAudits: audits.length,
+        publishedArticles,
+        failedArticles,
+      },
+    });
+  } catch (error) {
+    console.error("[AdminInspect] Error getting user credits:", error);
+    res.status(500).json({ error: error.message || "Lỗi lấy thống kê credit" });
   }
 });
 
