@@ -178,6 +178,14 @@ export default function Layout() {
     if (license && !licenseExpired) setLicenseBlocked(false);
   }, [needsPayment, license, licenseExpired]);
 
+  const mobileMenuItems = useMemo(() => {
+    const items = [...MORE_ITEMS];
+    if (user?.role === "admin" || user?.isAdmin) {
+      items.unshift({ path: "/admin/users", icon: "🛡️", label: "Giám sát Users" });
+    }
+    return items;
+  }, [user]);
+
   return (
     <div className={`app-layout ${isMobile ? "is-mobile" : ""}`}>
       {/* ── Mobile Header ── */}
@@ -295,6 +303,34 @@ export default function Layout() {
                 <span className="nav-badge nav-badge-lock" title="Đa nền tảng cần gói Pro+">🔒</span>
               )}
             </NavLink>
+            {Boolean(user?.role === "admin" || user?.isAdmin) && (
+              <NavLink
+                to="/admin/users"
+                className={({ isActive }) => (isActive ? "active" : "")}
+                style={{
+                  background: "rgba(239, 68, 68, 0.08)",
+                  border: "1px solid rgba(239, 68, 68, 0.25)",
+                  color: "#f87171",
+                  fontWeight: 600,
+                }}
+              >
+                <span className="nav-icon">🛡️</span> Giám sát Users
+                <span
+                  className="nav-badge"
+                  style={{
+                    background: "#ef4444",
+                    color: "#fff",
+                    fontSize: 9,
+                    padding: "1px 5px",
+                    borderRadius: 8,
+                    fontWeight: 700,
+                    marginLeft: "auto",
+                  }}
+                >
+                  Admin
+                </span>
+              </NavLink>
+            )}
           </nav>
 
           <div className="sidebar-bottom">
@@ -408,7 +444,7 @@ export default function Layout() {
         <BottomSheet
           open={showMore}
           onClose={() => setShowMore(false)}
-          items={MORE_ITEMS}
+          items={mobileMenuItems}
           currentPath={location.pathname}
         />
       )}

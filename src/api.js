@@ -521,4 +521,17 @@ export const api = {
     return fetchApi(`/affiliate/history${q ? "?" + q : ""}`);
   },
   affiliatePayout: (data) => fetchApi("/affiliate/payout", { method: "POST", body: data }),
+
+  // ===== Admin User Inspection (Read-Only) =====
+  getAdminUsers: () => fetchApi("/admin/users"),
+  getAdminUserSummary: (userId) => fetchApi(`/admin/users/${userId}/summary`),
+  getAdminUserProjects: (userId) => fetchApi(`/admin/users/${userId}/projects`),
+  getAdminProjectArticles: (userId, projectId) => fetchApi(`/admin/users/${userId}/projects/${projectId}/articles`),
+  getAdminArticleDetail: (userId, articleId) => fetchApi(`/admin/users/${userId}/articles/${articleId}`),
+  getAdminUserDrafts: (userId) => fetchApi(`/admin/users/${userId}/drafts`),
+  getAdminDraftDetail: (userId, draftId) => fetchApi(`/admin/users/${userId}/drafts/${draftId}`),
+  getAdminUserAudits: (userId) => fetchApi(`/admin/users/${userId}/audits`),
+  getAdminAuditDetail: (userId, auditId) => fetchApi(`/admin/users/${userId}/audits/${auditId}`),
+  getAdminUserKwPlans: (userId) => fetchApi(`/admin/users/${userId}/kwplans`),
+  getAdminUserWpSites: (userId) => fetchApi(`/admin/users/${userId}/wp-sites`),
 };

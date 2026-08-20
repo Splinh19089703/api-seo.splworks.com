@@ -27,6 +27,7 @@ const WooProducts = lazy(() => import("./pages/WooProducts"));
 const KeywordPlanner = lazy(() => import("./pages/KeywordPlanner"));
 const GSC = lazy(() => import("./pages/GSC"));
 const Affiliate = lazy(() => import("./pages/Affiliate"));
+const AdminUsers = lazy(() => import("./pages/AdminUsers"));
 
 import { api } from "./api";
 import "./index.css";
@@ -111,6 +112,7 @@ function AppContent() {
             <Route path="/keyword-planner" element={<Suspense fallback={<PageLoader />}><KeywordPlanner /></Suspense>} />
             <Route path="/gsc" element={<Suspense fallback={<PageLoader />}><FeatureGate feature="googleSearchConsole"><GSC /></FeatureGate></Suspense>} />
             <Route path="/affiliate" element={<Suspense fallback={<PageLoader />}><Affiliate /></Suspense>} />
+            <Route path="/admin/users" element={<Suspense fallback={<PageLoader />}><AdminUsers /></Suspense>} />
             <Route path="*" element={<Navigate to="/" />} />
           </Route>
         </Route>
