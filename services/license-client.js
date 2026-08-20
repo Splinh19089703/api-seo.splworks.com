@@ -255,20 +255,30 @@ async function getMyOrders(token) {
 // ===== Token persistence (in SQLite settings) =====
 
 async function saveToken(token) {
-  const settings = await storage.getSettings();
-  settings._authToken = token;
-  await storage.saveSettings(settings);
+  try {
+    const settings = await storage.getSettings();
+    settings._authToken = token;
+    await storage.saveSettings(settings);
+  } catch (err) {
+    console.warn("[license-client] Could not persist token to storage:", err.message);
+  }
 }
 
 async function getToken() {
-  const settings = await storage.getSettings();
-  return settings._authToken || null;
+  try {
+    const settings = await storage.getSettings();
+    return settings._authToken || null;
+  } catch {
+    return null;
+  }
 }
 
 async function clearToken() {
-  const settings = await storage.getSettings();
-  delete settings._authToken;
-  await storage.saveSettings(settings);
+  try {
+    const settings = await storage.getSettings();
+    delete settings._authToken;
+    await storage.saveSettings(settings);
+  } catch {}
   _licenseCacheMap.clear();
 }
 
