@@ -90,16 +90,19 @@ export default function Account() {
     navigate("/login", { replace: true });
   };
 
-  const isGoogleAccount = Boolean(
-    user?.isGoogleAccount ||
-    user?.googleId ||
-    (user?.avatarUrl && user?.avatarUrl.includes("googleusercontent")) ||
-    (user?.email && user?.email.includes("@gmail.com"))
+  // Tài khoản đã có mật khẩu riêng hay chưa
+  const hasCustomPassword = Boolean(
+    user?.hasCustomPassword ||
+    (!user?.googleId && !user?.isGoogleAccount)
   );
 
   const handleChangePassword = async (e) => {
     e.preventDefault();
     setPwError("");
+    if (hasCustomPassword && !pwForm.currentPassword) {
+      setPwError("Vui lòng nhập mật khẩu hiện tại");
+      return;
+    }
     if (pwForm.newPassword.length < 6) {
       setPwError("Mật khẩu mới phải ít nhất 6 ký tự");
       return;
@@ -111,12 +114,12 @@ export default function Account() {
     setPwLoading(true);
     try {
       await api.changePassword(
-        isGoogleAccount ? "" : pwForm.currentPassword,
+        hasCustomPassword ? pwForm.currentPassword : "",
         pwForm.newPassword
       );
       setShowChangePassword(false);
       setPwForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
-      alert("✅ Thiết lập mật khẩu thành công! Bạn có thể dùng mật khẩu này để đăng nhập cùng email.");
+      alert("✅ Đổi mật khẩu thành công!");
     } catch (e) {
       setPwError(e.message || "Lỗi đổi mật khẩu");
     }
@@ -199,7 +202,7 @@ export default function Account() {
               className="btn btn-secondary btn-sm"
               onClick={() => setShowChangePassword(!showChangePassword)}
             >
-              {isGoogleAccount ? "🔑 Tạo mật khẩu đăng nhập" : "🔒 Đổi mật khẩu"}
+              {!hasCustomPassword ? "🔑 Tạo mật khẩu đăng nhập" : "🔒 Đổi mật khẩu"}
             </button>
             <button className="btn btn-danger btn-sm" onClick={handleLogout}>
               Đăng xuất
@@ -212,9 +215,9 @@ export default function Account() {
       {showChangePassword && (
         <div className="card" style={{ marginBottom: 16 }}>
           <h3 style={{ fontSize: 15, marginBottom: 8 }}>
-            {isGoogleAccount ? "🔑 Tạo mật khẩu cho tài khoản Google" : "🔒 Đổi mật khẩu"}
+            {!hasCustomPassword ? "🔑 Tạo mật khẩu cho tài khoản Google" : "🔒 Đổi mật khẩu"}
           </h3>
-          {isGoogleAccount && (
+          {!hasCustomPassword && (
             <p style={{ fontSize: 13, color: "#60a5fa", margin: "0 0 12px", background: "rgba(59,130,246,0.1)", padding: "8px 12px", borderRadius: 6 }}>
               💡 Tài khoản của bạn liên kết Google ({user.email}). Bạn không cần nhập mật khẩu cũ, chỉ cần nhập mật khẩu mới dưới đây để có thể đăng nhập bằng cả Google và Email + Mật khẩu.
             </p>
@@ -228,15 +231,16 @@ export default function Account() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: isGoogleAccount ? "1fr 1fr" : "1fr 1fr 1fr",
+                gridTemplateColumns: !hasCustomPassword ? "1fr 1fr" : "1fr 1fr 1fr",
                 gap: 12,
               }}
             >
-              {!isGoogleAccount && (
+              {hasCustomPassword && (
                 <div className="form-group">
                   <label>Mật khẩu hiện tại</label>
                   <input
                     type="password"
+                    placeholder="Nhập mật khẩu đang dùng"
                     value={pwForm.currentPassword}
                     onChange={(e) =>
                       setPwForm({ ...pwForm, currentPassword: e.target.value })
