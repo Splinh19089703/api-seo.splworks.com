@@ -1100,127 +1100,691 @@ function PublishingSection() {
 
 /* ===== Prompts ===== */
 
+const PROMPT_TYPES = [
+  { id: "all", label: "Tất cả", icon: "📑" },
+  {
+    id: "research",
+    label: "Research",
+    icon: "🔍",
+    desc: "Phân tích từ khóa & search intent",
+    variables: ["{keyword}", "{language}"],
+  },
+  {
+    id: "write-article",
+    label: "Write Article",
+    icon: "✍️",
+    desc: "Phong cách viết bài & tone giọng",
+    variables: ["{keyword}", "{outline}", "{date}", "{title}", "{research_summary}"],
+  },
+  {
+    id: "thumbnail",
+    label: "Thumbnail",
+    icon: "🖼️",
+    desc: "Tạo ảnh đại diện bài viết",
+    variables: ["{keyword}", "{title}"],
+  },
+  {
+    id: "section-image",
+    label: "Section Image",
+    icon: "🎨",
+    desc: "Tạo ảnh minh họa từng section H2",
+    variables: ["{keyword}", "{section_heading}", "{title}"],
+  },
+];
+
+const PROMPT_TYPE_COLORS = {
+  research: "badge-info",
+  "write-article": "badge-success",
+  thumbnail: "badge-warning",
+  "section-image": "badge-critical",
+};
+
 function PromptsSection() {
   const [prompts, setPrompts] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
+  const [showModal, setShowModal] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState(null);
+  const [form, setForm] = useState({
+    name: "",
+    type: "write-article",
+    content: "",
+    isDefault: false,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [expandedMap, setExpandedMap] = useState({});
+  const [toast, setToast] = useState(null);
 
-  useEffect(() => {
-    api.getPrompts().then(setPrompts).catch(console.error);
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  const loadPrompts = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await api.getPrompts();
+      setPrompts(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Lỗi khi tải prompts:", err);
+      showToast("❌ Không thể tải danh sách prompt: " + err.message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const types = [
-    "all",
-    "research",
-    "write-article",
-    "thumbnail",
-    "section-image",
-  ];
-  const typeLabels = {
-    all: "Tất cả",
-    research: "Research",
-    "write-article": "Write Article",
-    thumbnail: "Thumbnail",
-    "section-image": "Section Image",
+  useEffect(() => {
+    loadPrompts();
+  }, [loadPrompts]);
+
+  const handleCreateNew = () => {
+    setEditingPrompt(null);
+    setForm({
+      name: "",
+      type: filter !== "all" ? filter : "write-article",
+      content: "",
+      isDefault: false,
+    });
+    setError(null);
+    setShowModal(true);
   };
-  const typeColors = {
-    research: "badge-info",
-    "write-article": "badge-success",
-    thumbnail: "badge-warning",
-    "section-image": "badge-critical",
+
+  const handleEdit = (prompt) => {
+    setEditingPrompt(prompt);
+    setForm({
+      name: prompt.name || "",
+      type: prompt.type || "write-article",
+      content: prompt.content || "",
+      isDefault: Boolean(prompt.isDefault),
+    });
+    setError(null);
+    setShowModal(true);
   };
+
+  const handleSave = async () => {
+    if (!form.name.trim()) {
+      setError("Vui lòng nhập tên template");
+      return;
+    }
+    if (!form.content.trim()) {
+      setError("Vui lòng nhập nội dung prompt");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      if (editingPrompt) {
+        await api.updatePrompt(editingPrompt.id, {
+          name: form.name.trim(),
+          type: form.type,
+          content: form.content.trim(),
+          isDefault: form.isDefault,
+        });
+        showToast("✅ Đã cập nhật prompt thành công!");
+      } else {
+        await api.createPrompt({
+          name: form.name.trim(),
+          type: form.type,
+          content: form.content.trim(),
+          isDefault: form.isDefault,
+        });
+        showToast("✅ Đã thêm prompt template mới!");
+      }
+      setShowModal(false);
+      await loadPrompts();
+    } catch (err) {
+      setError(err.message || "Lỗi khi lưu prompt template");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSetDefault = async (prompt) => {
+    try {
+      await api.updatePrompt(prompt.id, {
+        ...prompt,
+        isDefault: true,
+      });
+      showToast(`⭐ Đã đặt "${prompt.name}" làm mặc định cho ${prompt.type}`);
+      await loadPrompts();
+    } catch (err) {
+      alert("Lỗi khi đặt mặc định: " + err.message);
+    }
+  };
+
+  const handleDelete = async (prompt) => {
+    const isDef = prompt.isDefault;
+    const msg = isDef
+      ? `Prompt "${prompt.name}" đang là MẶC ĐỊNH cho bước ${prompt.type}. Bạn có chắc chắn muốn xóa không?`
+      : `Bạn có chắc muốn xóa prompt template "${prompt.name}"?`;
+    if (!confirm(msg)) return;
+
+    try {
+      await api.deletePrompt(prompt.id);
+      showToast(`🗑️ Đã xóa prompt "${prompt.name}"`);
+      await loadPrompts();
+    } catch (err) {
+      alert("Lỗi khi xóa prompt: " + err.message);
+    }
+  };
+
+  const toggleExpand = (id) => {
+    setExpandedMap((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const insertVariable = (varTag) => {
+    setForm((prev) => ({
+      ...prev,
+      content: prev.content ? `${prev.content} ${varTag}` : varTag,
+    }));
+  };
+
+  const currentTypeConfig =
+    PROMPT_TYPES.find((t) => t.id === form.type) || PROMPT_TYPES[2];
 
   const filtered =
     filter === "all" ? prompts : prompts.filter((p) => p.type === filter);
 
   return (
     <div>
+      {/* Toast Notification */}
+      {toast && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            background: "var(--card-bg, #1e293b)",
+            color: "var(--text-primary, #fff)",
+            padding: "12px 20px",
+            borderRadius: 10,
+            boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
+            border: "1px solid var(--accent-green, #10b981)",
+            zIndex: 9999,
+            fontSize: 13,
+            fontWeight: 500,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            animation: "fadeIn 0.2s ease-out",
+          }}
+        >
+          {toast}
+        </div>
+      )}
+
+      {/* Header */}
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
           marginBottom: 20,
+          flexWrap: "wrap",
+          gap: 12,
         }}
       >
         <div>
-          <h2 style={{ fontSize: 18 }}>Prompt Templates</h2>
-          <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-            Quản lý prompt AI cho từng bước tạo bài viết
+          <h2 style={{ fontSize: 18, marginBottom: 4 }}>Prompt Templates</h2>
+          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
+            Quản lý và tùy biến prompt AI cho từng bước tạo bài viết (Research, Viết bài, Tạo ảnh)
           </p>
         </div>
-        <button className="btn btn-primary">➕ Thêm Prompt</button>
+        <button className="btn btn-primary" onClick={handleCreateNew}>
+          ➕ Thêm Prompt
+        </button>
       </div>
 
-      <div className="filters">
-        {types.map((t) => (
-          <button
-            key={t}
-            className={`filter-btn ${filter === t ? "active" : ""}`}
-            onClick={() => setFilter(t)}
-          >
-            {typeLabels[t]}
+      {/* Filter Tabs */}
+      <div className="filters" style={{ marginBottom: 16, display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {PROMPT_TYPES.map((t) => {
+          const count =
+            t.id === "all"
+              ? prompts.length
+              : prompts.filter((p) => p.type === t.id).length;
+          return (
+            <button
+              key={t.id}
+              className={`filter-btn ${filter === t.id ? "active" : ""}`}
+              onClick={() => setFilter(t.id)}
+              style={{ display: "flex", alignItems: "center", gap: 6 }}
+            >
+              <span>{t.icon}</span>
+              <span>{t.label}</span>
+              <span
+                style={{
+                  fontSize: 11,
+                  padding: "1px 6px",
+                  borderRadius: 10,
+                  background: filter === t.id ? "rgba(255,255,255,0.2)" : "var(--bg-tertiary, rgba(255,255,255,0.08))",
+                }}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Prompts List */}
+      {loading ? (
+        <div style={{ textAlign: "center", padding: 40 }}>
+          <span className="loader" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="card" style={{ textAlign: "center", padding: "40px 20px" }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>📝</div>
+          <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>
+            Chưa có prompt template nào trong mục này
+          </div>
+          <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16 }}>
+            Bấm nút bên dưới để tạo prompt tùy chỉnh đầu tiên.
+          </p>
+          <button className="btn btn-primary" onClick={handleCreateNew}>
+            ➕ Thêm Prompt Template
           </button>
-        ))}
-      </div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {filtered.map((prompt) => {
+            const isExpanded = expandedMap[prompt.id];
+            const isLong = (prompt.content || "").length > 180;
+            const previewText =
+              !isExpanded && isLong
+                ? prompt.content.slice(0, 180) + "..."
+                : prompt.content;
 
-      {filtered.map((prompt) => (
-        <div key={prompt.id} className="card" style={{ marginBottom: 8 }}>
+            return (
+              <div
+                key={prompt.id}
+                className="card"
+                style={{
+                  padding: 16,
+                  border: prompt.isDefault
+                    ? "1px solid rgba(16, 185, 129, 0.4)"
+                    : "1px solid var(--border-color, rgba(255,255,255,0.08))",
+                  background: prompt.isDefault
+                    ? "rgba(16, 185, 129, 0.03)"
+                    : "var(--card-bg, rgba(255,255,255,0.04))",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: 12,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 260 }}>
+                    {/* Header line: Name & Badges */}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        marginBottom: 8,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <span style={{ fontWeight: 600, fontSize: 15, color: "var(--text-primary)" }}>
+                        {prompt.name}
+                      </span>
+                      <span
+                        className={`badge ${PROMPT_TYPE_COLORS[prompt.type] || "badge-info"}`}
+                        style={{ textTransform: "capitalize", fontSize: 11 }}
+                      >
+                        {prompt.type}
+                      </span>
+                      {prompt.isDefault ? (
+                        <span
+                          className="badge badge-success"
+                          style={{
+                            background: "rgba(16, 185, 129, 0.15)",
+                            color: "var(--accent-green, #10b981)",
+                            border: "1px solid rgba(16, 185, 129, 0.3)",
+                            fontWeight: 600,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                          }}
+                        >
+                          ⭐ Mặc định
+                        </span>
+                      ) : null}
+                    </div>
+
+                    {/* Content text */}
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: "var(--text-secondary, #94a3b8)",
+                        lineHeight: 1.6,
+                        whiteSpace: "pre-wrap",
+                        background: "rgba(0,0,0,0.15)",
+                        padding: "10px 12px",
+                        borderRadius: 8,
+                        fontFamily: "inherit",
+                        border: "1px solid rgba(255,255,255,0.04)",
+                      }}
+                    >
+                      {previewText}
+                    </div>
+
+                    {/* Expand toggle */}
+                    {isLong && (
+                      <button
+                        onClick={() => toggleExpand(prompt.id)}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "var(--accent-blue, #3b82f6)",
+                          fontSize: 12,
+                          cursor: "pointer",
+                          padding: "4px 0",
+                          marginTop: 4,
+                          fontWeight: 500,
+                        }}
+                      >
+                        {isExpanded ? "▲ Thu gọn" : "▼ Xem đầy đủ"}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Actions buttons */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {!prompt.isDefault && (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => handleSetDefault(prompt)}
+                        title="Đặt làm template mặc định cho bước này"
+                        style={{ fontSize: 12 }}
+                      >
+                        ⭐ Đặt mặc định
+                      </button>
+                    )}
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => handleEdit(prompt)}
+                      style={{ fontSize: 12 }}
+                    >
+                      ✏️ Sửa
+                    </button>
+                    <button
+                      className="btn btn-danger btn-sm"
+                      onClick={() => handleDelete(prompt)}
+                      style={{ fontSize: 12 }}
+                    >
+                      🗑️ Xóa
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Modal Add / Edit Prompt */}
+      {showModal && (
+        <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-start",
-            }}
+            className="modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 680, width: "95vw" }}
           >
-            <div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 16,
+              }}
+            >
+              <h2 style={{ fontSize: 18, margin: 0 }}>
+                {editingPrompt ? "✏️ Sửa Prompt Template" : "➕ Thêm Prompt Template"}
+              </h2>
+              <button
+                onClick={() => setShowModal(false)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  fontSize: 20,
+                  cursor: "pointer",
+                  color: "var(--text-muted)",
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {error && (
+              <div
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  marginBottom: 14,
+                  fontSize: 13,
+                  background: "rgba(239, 68, 68, 0.12)",
+                  color: "var(--accent-red, #ef4444)",
+                  border: "1px solid rgba(239, 68, 68, 0.3)",
+                }}
+              >
+                {error}
+              </div>
+            )}
+
+            {/* Field: Name */}
+            <div className="form-group" style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 6 }}>
+                Tên Template *
+              </label>
+              <input
+                type="text"
+                placeholder="VD: Phong cách chuẩn E-E-A-T, Phong cách hài hước..."
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                style={{ width: "100%", fontSize: 13 }}
+              />
+            </div>
+
+            {/* Field: Step Type */}
+            <div className="form-group" style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 6 }}>
+                Bước áp dụng (Loại Prompt) *
+              </label>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                  gap: 8,
+                }}
+              >
+                {PROMPT_TYPES.filter((t) => t.id !== "all").map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className={`btn ${form.type === t.id ? "btn-primary" : "btn-secondary"}`}
+                    onClick={() => setForm({ ...form, type: t.id })}
+                    style={{
+                      fontSize: 12,
+                      padding: "8px 10px",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 4,
+                      textAlign: "center",
+                    }}
+                  >
+                    <span style={{ fontSize: 16 }}>{t.icon}</span>
+                    <span style={{ fontWeight: 600 }}>{t.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Variable helper chips */}
+            {currentTypeConfig?.variables?.length > 0 && (
+              <div
+                style={{
+                  marginBottom: 12,
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  background: "rgba(59, 130, 246, 0.08)",
+                  border: "1px solid rgba(59, 130, 246, 0.2)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "var(--accent-blue, #60a5fa)",
+                    fontWeight: 600,
+                    marginBottom: 6,
+                  }}
+                >
+                  💡 Biến số hỗ trợ (Bấm để chèn vào nội dung prompt):
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {currentTypeConfig.variables.map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => insertVariable(v)}
+                      style={{
+                        padding: "2px 8px",
+                        borderRadius: 6,
+                        background: "rgba(59, 130, 246, 0.18)",
+                        color: "#93c5fd",
+                        border: "1px solid rgba(59, 130, 246, 0.3)",
+                        fontSize: 11,
+                        fontFamily: "monospace",
+                        cursor: "pointer",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      + {v}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Field: Content */}
+            <div className="form-group" style={{ marginBottom: 14 }}>
               <div
                 style={{
                   display: "flex",
+                  justifyContent: "space-between",
                   alignItems: "center",
-                  gap: 8,
                   marginBottom: 6,
                 }}
               >
-                <span style={{ fontWeight: 600, fontSize: 14 }}>
-                  {prompt.name}
+                <label style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>
+                  Nội dung Prompt *
+                </label>
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  {form.content.length} ký tự
                 </span>
-                <span
-                  className={`badge ${typeColors[prompt.type] || "badge-info"}`}
-                >
-                  {prompt.type}
-                </span>
-                {prompt.isDefault && (
-                  <span className="badge badge-success">Mặc định</span>
-                )}
               </div>
-              <p
+              <textarea
+                rows={9}
+                placeholder="Nhập nội dung câu lệnh prompt chi tiết tại đây..."
+                value={form.content}
+                onChange={(e) => setForm({ ...form, content: e.target.value })}
                 style={{
+                  width: "100%",
                   fontSize: 13,
-                  color: "var(--text-secondary)",
-                  lineHeight: 1.6,
+                  lineHeight: 1.5,
+                  fontFamily: "inherit",
+                  resize: "vertical",
                 }}
-              >
-                {prompt.content?.slice(0, 200)}...
-              </p>
+              />
             </div>
-            <div style={{ display: "flex", gap: 6 }}>
-              <button className="btn btn-secondary btn-sm">Sửa</button>
+
+            {/* Field: isDefault toggle */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "12px 0",
+                borderTop: "1px solid var(--border-color, rgba(255,255,255,0.08))",
+                marginBottom: 16,
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>
+                  ⭐ Đặt làm prompt mặc định
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  Tự động áp dụng template này cho các bài viết mới khi thực hiện bước {form.type}
+                </div>
+              </div>
               <button
-                className="btn btn-danger btn-sm"
-                onClick={() => {
-                  if (confirm("Xóa?")) {
-                    api
-                      .deletePrompt(prompt.id)
-                      .then(() => api.getPrompts().then(setPrompts));
-                  }
+                type="button"
+                onClick={() => setForm({ ...form, isDefault: !form.isDefault })}
+                style={{
+                  width: 44,
+                  height: 24,
+                  borderRadius: 12,
+                  border: "none",
+                  cursor: "pointer",
+                  background: form.isDefault
+                    ? "var(--accent-green, #10b981)"
+                    : "var(--bg-tertiary, rgba(255,255,255,0.15))",
+                  position: "relative",
+                  transition: "background 0.2s",
                 }}
               >
-                Xóa
+                <span
+                  style={{
+                    position: "absolute",
+                    top: 3,
+                    left: form.isDefault ? 23 : 3,
+                    width: 18,
+                    height: 18,
+                    borderRadius: "50%",
+                    background: "white",
+                    transition: "left 0.2s",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
+                  }}
+                />
+              </button>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="modal-actions" style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setShowModal(false)}
+                disabled={saving}
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleSave}
+                disabled={saving || !form.name.trim() || !form.content.trim()}
+              >
+                {saving ? "⏳ Đang lưu..." : editingPrompt ? "💾 Lưu thay đổi" : "➕ Thêm mới"}
               </button>
             </div>
           </div>
         </div>
-      ))}
+      )}
     </div>
   );
 }
