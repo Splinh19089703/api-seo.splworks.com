@@ -32,7 +32,7 @@ export default function Register() {
     setLoading(false);
   };
 
-  // Google Sign-In
+  // Google Sign-In — cleanup script onload để tránh leak + double render (pattern của Login.jsx)
   useEffect(() => {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
     if (!clientId) return;
@@ -70,7 +70,10 @@ export default function Register() {
     script.src = "https://accounts.google.com/gsi/client";
     script.async = true;
     script.defer = true;
-    script.onload = initGoogle;
+    script.onload = () => {
+      initGoogle();
+      script.onload = null; // cleanup — tránh double init khi StrictMode double-mount
+    };
     document.head.appendChild(script);
   }, []);
 

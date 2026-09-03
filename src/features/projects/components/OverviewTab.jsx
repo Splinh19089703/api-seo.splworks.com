@@ -14,9 +14,9 @@ export default function OverviewTab({ project, checklist, onTabChange }) {
         .then(data => setAuditCount(data?.audits?.length || 0))
         .catch(() => setAuditCount(0));
 
-      // Load recent articles
-      api.getDrafts(project.id)
-        .then(data => setRecentArticles((data?.drafts || data || []).slice(0, 6)))
+      // Load recent articles — dùng API theo project (getDrafts() trả về standalone drafts, không lọc theo project)
+      api.getArticles(project.id)
+        .then(data => setRecentArticles((data?.articles || data || []).slice(0, 6)))
         .catch(() => setRecentArticles([]));
     }
   }, [project?.id]);

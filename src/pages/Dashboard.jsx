@@ -32,7 +32,6 @@ export default function Dashboard() {
   const [wpSites, setWpSites]     = useState([]);
   const [dashData, setDashData]   = useState(null);
   const [loading, setLoading]     = useState(true);
-  const [now, setNow]             = useState(Date.now());
   const navigate = useNavigate();
   const pollRef = useRef(null);
 
@@ -54,15 +53,13 @@ export default function Dashboard() {
 
   useEffect(() => {
     load();
-    // Clock tick mỗi 30s
-    const clock = setInterval(() => setNow(Date.now()), 30000);
-    return () => clearInterval(clock);
   }, [load]);
 
-  // Poll active tasks mỗi 5s khi có task đang chạy
+  // Poll active tasks mỗi 5s khi có task đang chạy — chỉ khi tab visible (tránh request trùng lãng phí)
   useEffect(() => {
     if (activeTasks.length > 0) {
       pollRef.current = setInterval(() => {
+        if (document.hidden) return; // skip poll khi tab ẩn
         api.getActiveTasks().then(t => setActive(t || [])).catch(() => {});
         api.getDrafts().then(d => setDrafts(d || [])).catch(() => {});
       }, 5000);

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { api } from "../../../api";
 import { parseHtmlSections } from "../../../utils/parseHtmlSections";
+import SafeHtml from "../../../components/SafeHtml";
 
 export default function ArticleDetailView({ article, onBack, projectId }) {
   // For imported articles, default to content tab since research/outline are skipped
@@ -576,7 +577,7 @@ export default function ArticleDetailView({ article, onBack, projectId }) {
             )}
             {contentViewMode === "edit" && (<div className="card" style={{ padding: 16 }}><textarea defaultValue={contentHtml} style={{ width: "100%", minHeight: 500, background: "var(--bg-darker)", color: "var(--text-primary)", border: "1px solid var(--border-light)", borderRadius: 8, padding: 16, fontSize: 13, fontFamily: "Monaco, Consolas, monospace", resize: "vertical", outline: "none" }} onBlur={async (e) => { try { const newHtml = e.target.value; const wc = newHtml.replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length; await api.updateArticle(projectId, article.id, { pipeline: { ...article.pipeline, content: { status: "done", data: { ...contentDataObj, html: newHtml, wordCount: wc, readingTime: Math.ceil(wc / 200) } } } }); } catch (err) { console.error(err); } }} /></div>)}
             {contentViewMode === "html" && (<div className="card" style={{ padding: 16 }}><pre style={{ background: "var(--bg-darker)", padding: 16, borderRadius: 8, fontSize: 12, overflow: "auto", maxHeight: 600, color: "var(--text-primary)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{contentHtml}</pre></div>)}
-            {contentViewMode === "preview" && (<div className="card" style={{ padding: 24 }}><div className="article-content-preview" style={{ fontSize: 15, lineHeight: 1.8, color: "var(--text-primary)" }} dangerouslySetInnerHTML={{ __html: contentHtml }} /></div>)}
+            {contentViewMode === "preview" && (<div className="card" style={{ padding: 24 }}><SafeHtml className="article-content-preview" style={{ fontSize: 15, lineHeight: 1.8, color: "var(--text-primary)" }} html={contentHtml} /></div>)}
             {/* ─── SECTION REWRITE MODE ─────────────────────────── */}
             {contentViewMode === "sections" && (() => {
               const sections = parseHtmlSections(contentHtml).map((sec) => ({
@@ -648,7 +649,7 @@ export default function ArticleDetailView({ article, onBack, projectId }) {
                           {hasEdit ? (
                             <div>
                               <div style={{ fontSize: 11, color: "#10b981", fontWeight: 600, marginBottom: 6 }}>📝 Bản mới ({hasEdit.split(/\s+/).filter(Boolean).length} từ):</div>
-                              <div style={{ fontSize: 13, lineHeight: 1.65, color: "var(--text)", maxHeight: 120, overflow: "hidden", opacity: 0.85 }} dangerouslySetInnerHTML={{ __html: hasEdit.substring(0, 400) + (hasEdit.length > 400 ? "..." : "") }} />
+                              <SafeHtml style={{ fontSize: 13, lineHeight: 1.65, color: "var(--text)", maxHeight: 120, overflow: "hidden", opacity: 0.85 }} html={hasEdit.substring(0, 400) + (hasEdit.length > 400 ? "..." : "")} />
                               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                                 <button className="btn btn-sm btn-secondary" onClick={() => handleRewriteSection(idx)} disabled={isRewriting}>🔄 Viết lại lại</button>
                                 <button className="btn btn-sm btn-secondary" onClick={() => { const copy = { ...sectionEdits }; delete copy[idx]; setSectionEdits(copy); }}>↩️ Hoàn tác</button>
@@ -825,7 +826,7 @@ export default function ArticleDetailView({ article, onBack, projectId }) {
 
               {/* Full Content — no truncation */}
               <div style={{ maxHeight: showFullContent ? "none" : 500, overflow: showFullContent ? "visible" : "hidden", position: "relative", padding: "16px", borderRadius: 8, border: "1px solid var(--border-light)" }}>
-                <div className="article-content-preview" style={{ fontSize: 15, lineHeight: 1.8, color: "var(--text-primary)" }} dangerouslySetInnerHTML={{ __html: contentDataObj.html || "" }} />
+                <SafeHtml className="article-content-preview" style={{ fontSize: 15, lineHeight: 1.8, color: "var(--text-primary)" }} html={contentDataObj.html || ""} />
                 {!showFullContent && (
                   <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 80, background: "linear-gradient(transparent, var(--bg-card))", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 8 }}>
                     <button className="btn btn-primary btn-sm" onClick={() => setShowFullContent(true)}>📖 Xem toàn bộ nội dung</button>

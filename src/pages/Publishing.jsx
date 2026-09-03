@@ -231,7 +231,12 @@ function AccountsTab({ accounts, onRefresh, modal, setModal }) {
                           <button className="btn btn-secondary btn-sm" style={{ padding: "2px 6px", fontSize: 10 }}
                             onClick={(e) => { e.stopPropagation(); setModal({ mode: "edit", platform: p, account: a }); }}>✏️</button>
                           <button className="btn btn-secondary btn-sm" style={{ padding: "2px 6px", fontSize: 10, color: "var(--accent-red)" }}
-                            onClick={async (e) => { e.stopPropagation(); if (confirm("Xoá tài khoản này?")) { await api.deletePublishAccount(a.id); onRefresh(); } }}>🗑</button>
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (!confirm("Xoá tài khoản này?")) return;
+                              try { await api.deletePublishAccount(a.id); onRefresh(); }
+                              catch (err) { alert("Lỗi xóa tài khoản: " + err.message); }
+                            }}>🗑</button>
                         </div>
                       </div>
                     ))}
@@ -277,7 +282,11 @@ function AccountsTab({ accounts, onRefresh, modal, setModal }) {
                               <button className="btn btn-secondary btn-sm" style={{ padding: "4px 8px", fontSize: 10 }}
                                 onClick={() => setModal({ mode: "edit", platform: p, account: a })}>✏️</button>
                               <button className="btn btn-secondary btn-sm" style={{ padding: "4px 8px", fontSize: 10, color: "var(--accent-red)" }}
-                                onClick={async () => { if (confirm("Xoá tài khoản WordPress này?")) { await api.deletePublishAccount(a.id); onRefresh(); } }}>🗑</button>
+                                onClick={async () => {
+                                  if (!confirm("Xoá tài khoản WordPress này?")) return;
+                                  try { await api.deletePublishAccount(a.id); onRefresh(); }
+                                  catch (err) { alert("Lỗi xóa tài khoản: " + err.message); }
+                                }}>🗑</button>
                             </div>
                           </div>
                         ))}

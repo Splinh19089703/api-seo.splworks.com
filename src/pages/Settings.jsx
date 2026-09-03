@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import WpSiteCard from "../components/WpSiteCard";
 
@@ -11,7 +12,16 @@ const NAV_ITEMS = [
 ];
 
 export default function Settings() {
-  const [activeSection, setActiveSection] = useState("api-keys");
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Sync section với URL path — cho phép link sâu như /settings/ai-provider hoạt động
+  const pathSection = location.pathname.replace(/^\/settings\/?/, "").split("/")[0];
+  const activeSection = NAV_ITEMS.some(i => i.id === pathSection) ? pathSection : "api-keys";
+
+  const switchSection = (id) => {
+    navigate(`/settings/${id}`, { replace: true });
+  };
 
   return (
     <div>
@@ -28,8 +38,11 @@ export default function Settings() {
             <a
               key={item.id}
               className={activeSection === item.id ? "active" : ""}
-              onClick={() => setActiveSection(item.id)}
-              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                switchSection(item.id);
+              }}
+              href={`/settings/${item.id}`}
             >
               {item.label}
             </a>
@@ -110,8 +123,12 @@ function ApiKeysSection() {
 
   const handleDelete = async (id) => {
     if (!confirm("Xóa API key này?")) return;
-    await api.deleteApiKey(id);
-    api.getApiKeys().then(setKeys);
+    try {
+      await api.deleteApiKey(id);
+      api.getApiKeys().then(setKeys);
+    } catch (e) {
+      alert("Lỗi xóa API key: " + e.message);
+    }
   };
 
   const handleTest = async () => {
@@ -945,8 +962,12 @@ function PublishingSection() {
   };
 
   const handleDelete = async (id) => {
-    await api.deleteWpSite(id);
-    loadSites();
+    try {
+      await api.deleteWpSite(id);
+      loadSites();
+    } catch (e) {
+      alert("Lỗi xóa site: " + e.message);
+    }
   };
 
   return (

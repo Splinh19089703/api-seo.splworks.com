@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 
@@ -9,6 +9,7 @@ export default function AuditList() {
   const [maxPages, setMaxPages] = useState(200);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
+  const pollRef = useRef(null);
 
   const loadAudits = () => {
     api
@@ -20,6 +21,13 @@ export default function AuditList() {
 
   useEffect(() => {
     loadAudits();
+    // Cleanup polling khi rời trang — tránh interval chạy ngầm 5 phút
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
   }, []);
 
   const handleStart = async () => {
@@ -30,12 +38,15 @@ export default function AuditList() {
       await api.startAudit({ domain: d, maxPages });
       setShowModal(false);
       setDomain("");
-      // Poll for updates
+      // Poll for updates — track interval để cleanup khi unmount
       setTimeout(loadAudits, 2000);
-      const interval = setInterval(() => {
+      pollRef.current = setInterval(() => {
         loadAudits();
       }, 5000);
-      setTimeout(() => clearInterval(interval), 300000);
+      setTimeout(() => {
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = null;
+      }, 300000);
     } catch (error) {
       alert("Lỗi: " + error.message);
     }

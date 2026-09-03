@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
+import useUpgradePrompt from "../hooks/useUpgradePrompt";
 
 export default function Projects() {
   const navigate = useNavigate();
+  const { withUpgradePrompt, UpgradePromptUI } = useUpgradePrompt();
   const [projects, setProjects] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ name: "", description: "", domain: "" });
@@ -37,11 +39,15 @@ export default function Projects() {
   };
 
   const handleCreate = async () => {
-    const p = await api.createProject(form);
-    setShowModal(false);
-    setForm({ name: "", description: "", domain: "" });
-    loadProjects();
-    navigate(`/projects/${p.id}`);
+    try {
+      const p = await api.createProject(form);
+      setShowModal(false);
+      setForm({ name: "", description: "", domain: "" });
+      loadProjects();
+      navigate(`/projects/${p.id}`);
+    } catch (e) {
+      if (!withUpgradePrompt(e)) alert("Lỗi tạo dự án: " + e.message);
+    }
   };
 
   const handleDelete = async (id) => {
@@ -361,6 +367,8 @@ export default function Projects() {
           </div>
         </div>
       )}
+
+      {UpgradePromptUI}
     </div>
   );
 }

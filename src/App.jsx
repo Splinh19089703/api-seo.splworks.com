@@ -5,6 +5,7 @@ import { TaskQueueProvider } from "./context/TaskQueueContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Layout from "./components/Layout";
 import FeatureGate from "./components/FeatureGate";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 // Eagerly loaded (fast first paint)
 import Dashboard from "./pages/Dashboard";
@@ -123,9 +124,11 @@ function AppContent() {
 
 function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 

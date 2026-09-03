@@ -1,32 +1,7 @@
 import { useState } from "react";
 import PricingModal from "./PricingModal";
 import { useAuth } from "../context/AuthContext";
-
-const PLAN_NAMES = {
-  trial: "Dùng thử",
-  basic: "Basic",
-  pro: "Pro",
-  agency: "Agency",
-  unlimited: "Unlimited",
-};
-
-const FEATURE_LABELS = {
-  seoAudit: "SEO Audit",
-  multiPlatform: "Đăng đa nền tảng",
-  googleSearchConsole: "Google Search Console",
-  knowledgeBase: "Knowledge Base",
-  internalLinks: "Internal Links",
-  prioritySupport: "Hỗ trợ ưu tiên",
-  affiliate: "CTV / Affiliate",
-};
-
-const MIN_PLAN_FOR_FEATURE = {
-  seoAudit: "Pro",
-  multiPlatform: "Pro",
-  googleSearchConsole: "Agency",
-  prioritySupport: "Agency",
-  affiliate: "Unlimited",
-};
+import { PLAN_NAMES, FEATURE_LABELS, MIN_PLAN_FOR_FEATURE } from "../constants/plans";
 
 /**
  * UpgradePrompt — Shown when user hits a limit or feature is locked

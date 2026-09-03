@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "../../../api";
+import SafeHtml from "../../../components/SafeHtml";
 
 // B1: Skeleton shimmer component
 const SkeletonRow = () => (
@@ -403,7 +404,7 @@ export default function WpPostsBrowser({
                 alert(msg.join("\n") || "Đã import xong!");
                 deselectAll();
               } catch (err) {
-                alert("❌ Import thất bại: " + (err.response?.data?.error || err.message));
+                alert("❌ Import thất bại: " + (err.message || "Lỗi không xác định"));
               }
             }}
             style={{
@@ -502,7 +503,7 @@ export default function WpPostsBrowser({
                     whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                     display: "flex", alignItems: "center", gap: 6,
                   }}>
-                    <span dangerouslySetInnerHTML={{ __html: p.title || "(Không tiêu đề)" }} />
+                    <SafeHtml as="span" html={p.title || "(Không tiêu đề)"} />
                     <RewriteStatusBadge status={rwStatus} />
                     <QueueStatusBadge queueItem={queueItem} />
                   </div>

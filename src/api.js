@@ -33,7 +33,7 @@ async function fetchApi(endpoint, options = {}) {
     const response = await fetch(url, config);
     clearTimeout(timeoutId);
 
-    // Handle 401 — redirect to login
+    // Handle 401 — clear session và redirect về login (trừ khi đang ở trang login/register)
     if (response.status === 401) {
       const errorData = await response.json().catch(() => ({}));
       if (errorData.requireAuth) {
@@ -42,6 +42,10 @@ async function fetchApi(endpoint, options = {}) {
         const shouldClearSession = token && currentToken === token;
         if (shouldClearSession) {
           localStorage.removeItem("splseo-token");
+          // Chỉ redirect khi token thực sự hết hạn giữa phiên — tránh loop khi trang login tự gọi API
+          if (!["/login", "/register"].includes(window.location.pathname)) {
+            window.location.assign("/login");
+          }
         }
       }
       throw new Error(errorData.error || "Phiên đăng nhập hết hạn");
@@ -300,8 +304,6 @@ export const api = {
   // Content Pipeline
   research: (data) =>
     fetchApi("/content/research", { method: "POST", body: data }),
-  generateOutlineLegacy: (data) =>
-    fetchApi("/content/outline", { method: "POST", body: data }),
   publishToWp: (data) =>
     fetchApi("/content/publish", { method: "POST", body: data }),
 
@@ -368,44 +370,6 @@ export const api = {
     ),
   getArticlePublishHistory: (articleId) =>
     fetchApi(`/publish/history/${articleId}`),
-
-  // Streaming content generation (used for real-time streaming UI)
-  generateContentStream: async (data, onChunk, onDone) => {
-    const token = getAuthToken();
-    const headers = { "Content-Type": "application/json" };
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-
-    const response = await fetch(`${API_BASE}/content/generate`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(data),
-    });
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const data = line.slice(6);
-          if (data === "[DONE]") {
-            onDone?.();
-            return;
-          }
-          try {
-            const parsed = JSON.parse(data);
-            onChunk?.(parsed.content);
-          } catch {}
-        }
-      }
-    }
-    onDone?.();
-  },
 
   // ===== Topical Map =====
   getTopicalMaps: () =>
@@ -476,9 +440,12 @@ export const api = {
   kwRelated: (data) =>
     fetchApi("/keywords/related", { method: "POST", body: data }),
   kwExport: async (keywords, filename) => {
+    const headers = { "Content-Type": "application/json" };
+    const token = getAuthToken();
+    if (token) headers.Authorization = `Bearer ${token}`; // không gửi "Bearer null" khi chưa login
     const resp = await fetch(`${API_BASE}/keywords/export`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` },
+      headers,
       body: JSON.stringify({ keywords, filename }),
     });
     if (!resp.ok) throw new Error("Export thất bại");

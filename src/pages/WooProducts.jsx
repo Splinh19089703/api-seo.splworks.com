@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../api";
+import SafeHtml from "../components/SafeHtml";
+import useUpgradePrompt from "../hooks/useUpgradePrompt";
 
 const STATUS_MAP = {
   "not-optimized": { label: "Chưa tối ưu", color: "#6b7280", icon: "⬜" },
@@ -22,6 +24,7 @@ const LENGTH_OPTIONS = [
 ];
 
 export default function WooProducts() {
+  const { withUpgradePrompt, UpgradePromptUI } = useUpgradePrompt();
   const [sites, setSites] = useState([]);
   const [selectedSite, setSelectedSite] = useState(null);
   const [products, setProducts] = useState([]);
@@ -34,6 +37,8 @@ export default function WooProducts() {
 
   // Selection
   const [selected, setSelected] = useState(new Set());
+  // Error state cho load products — không che lỗi bằng empty state
+  const [loadError, setLoadError] = useState("");
 
   // Generate panel
   const [genProduct, setGenProduct] = useState(null);
@@ -62,6 +67,7 @@ export default function WooProducts() {
   const loadProducts = useCallback(async () => {
     if (!selectedSite) return;
     setLoading(true);
+    setLoadError("");
     try {
       const [prodData, statsData] = await Promise.all([
         api.wooGetProducts(selectedSite.id, { page, per_page: 20, search }),
@@ -70,8 +76,11 @@ export default function WooProducts() {
       setProducts(prodData.products || []);
       setTotalPages(prodData.total_pages || 1);
       setStats(statsData);
+      // Đổi trang/search → reset selection cũ (không còn thuộc trang hiện tại)
+      setSelected(new Set());
     } catch (err) {
       console.error("Load products error:", err);
+      setLoadError(err.message || "Không tải được danh sách sản phẩm");
     }
     setLoading(false);
   }, [selectedSite, page, search]);
@@ -89,10 +98,17 @@ export default function WooProducts() {
     });
   };
   const selectAll = () => {
-    if (selected.size === products.length) {
-      setSelected(new Set());
+    // So khớp với ID của trang hiện tại — tránh trạng thái sai khi còn selection từ trang khác
+    const currentPageIds = products.map(p => p.id);
+    const allCurrentSelected = currentPageIds.length > 0 && currentPageIds.every(id => selected.has(id));
+    if (allCurrentSelected) {
+      setSelected(prev => {
+        const next = new Set(prev);
+        currentPageIds.forEach(id => next.delete(id));
+        return next;
+      });
     } else {
-      setSelected(new Set(products.map(p => p.id)));
+      setSelected(prev => new Set([...prev, ...currentPageIds]));
     }
   };
 
@@ -113,7 +129,7 @@ export default function WooProducts() {
       });
       setGenResult(result);
     } catch (err) {
-      setGenResult({ error: err.message });
+      if (!withUpgradePrompt(err)) setGenResult({ error: err.message });
     }
     setGenerating(false);
   };
@@ -284,6 +300,13 @@ export default function WooProducts() {
           <div style={{ textAlign: "center", padding: 40 }}>
             <span className="loader" />
             <p style={{ color: "var(--text-muted)", marginTop: 12 }}>Đang tải sản phẩm...</p>
+          </div>
+        ) : loadError ? (
+          <div style={{ textAlign: "center", padding: 40 }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+            <p style={{ color: "#ef4444", margin: 0, fontWeight: 600 }}>Không tải được sản phẩm</p>
+            <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 4 }}>{loadError}</p>
+            <button className="btn btn-secondary btn-sm" style={{ marginTop: 12 }} onClick={loadProducts}>↻ Thử lại</button>
           </div>
         ) : products.length === 0 ? (
           <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>
@@ -470,9 +493,9 @@ export default function WooProducts() {
 
                   <div className="woo-gen-section">
                     <h4>📄 Mô tả đầy đủ</h4>
-                    <div
+                    <SafeHtml
                       className="woo-gen-preview"
-                      dangerouslySetInnerHTML={{ __html: genResult.description }}
+                      html={genResult.description}
                     />
                   </div>
 
@@ -512,6 +535,8 @@ export default function WooProducts() {
           </div>
         </div>
       )}
+
+      {UpgradePromptUI}
     </div>
   );
 }

@@ -19,7 +19,7 @@ const STEP_MAP = {
 export function useActiveTasks() {
   const [tasks, setTasks] = useState([]);
 
-  const fetch = useCallback(() => {
+  const loadTasks = useCallback(() => {
     api
       .get("/content/active-tasks")
       .then((data) => setTasks(Array.isArray(data) ? data : []))
@@ -27,10 +27,12 @@ export function useActiveTasks() {
   }, []);
 
   useEffect(() => {
-    fetch();
-    const timer = setInterval(fetch, 5000);
+    loadTasks();
+    const timer = setInterval(() => {
+      if (!document.hidden) loadTasks(); // skip khi tab ẩn — tránh request lãng phí
+    }, 5000);
     return () => clearInterval(timer);
-  }, [fetch]);
+  }, [loadTasks]);
 
   return tasks;
 }

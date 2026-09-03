@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 
 // ─── Global Task Queue Context ────────────────────────────────────────────────
@@ -335,6 +336,8 @@ export function TaskQueueWidget({ projectId = null }) {
 
 // ─── TaskRow: Single task in the list ───────────────────────────────────────
 function TaskRow({ task, onRemove, onPush }) {
+  // SPA navigate — giữ nguyên task queue in-memory (window.location.href sẽ reload và mất queue)
+  const navigate = useNavigate();
   const statusIcons = {
     pending: "🕐", running: "⏳", done: "✅", error: "❌",
   };
@@ -356,8 +359,7 @@ function TaskRow({ task, onRemove, onPush }) {
       }}
       onClick={() => {
         if (task.navigateTo) {
-          window.location.hash = "";
-          window.location.href = task.navigateTo;
+          navigate(task.navigateTo);
         }
       }}
       onMouseEnter={e => { if (task.navigateTo) e.currentTarget.style.background = "rgba(59,130,246,0.04)"; }}

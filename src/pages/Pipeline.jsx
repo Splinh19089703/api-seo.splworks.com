@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "../api";
+import SafeHtml from "../components/SafeHtml";
 import { parseHtmlSections, mergeSections, replaceSectionHtml } from "../utils/parseHtmlSections";
 import ImageReplacer from "../components/ImageReplacer";
 import PublishSection from "../components/PublishSection";
+import useUpgradePrompt from "../hooks/useUpgradePrompt";
+import { ARTICLE_STATUS } from "../constants/plans";
 
 const INTENT_COLORS = { informational: "#3b82f6", commercial: "#f59e0b", transactional: "#10b981", navigational: "#8b5cf6", local: "#ef4444" };
 const INTENT_LABELS = { informational: "Informational", commercial: "Commercial", transactional: "Transactional", navigational: "Navigational", local: "Local" };
@@ -17,8 +20,14 @@ const STATUS_MAP = {
   review: { label: "Hoàn thành", color: "#10b981", bg: "rgba(16,185,129,0.1)", icon: "✅" },
   error: { label: "Lỗi", color: "#ef4444", bg: "rgba(239,68,68,0.1)", icon: "❌" },
 };
+// Fallback cho status không nằm trong STATUS_MAP (draft/published...) — dùng constants chung
+const statusMapWith = (s) => STATUS_MAP[s] || (() => {
+  const info = ARTICLE_STATUS[s];
+  return info ? { label: info.label, color: info.color, bg: `${info.color}1a`, icon: info.icon } : { label: s, color: "#6b7280", bg: "rgba(107,114,128,0.1)", icon: "❔" };
+})();
 
 export default function Pipeline() {
+  const { withUpgradePrompt, UpgradePromptUI } = useUpgradePrompt();
   const [view, setView] = useState("input");
   const [clusters, setClusters] = useState([]);
   const [selected, setSelected] = useState(new Set());
@@ -116,7 +125,9 @@ export default function Pipeline() {
       setSelected(new Set());
       await loadDrafts();
       setSubTab("articles");
-    } catch (e) { alert("Lỗi: " + e.message); }
+    } catch (e) {
+      if (!withUpgradePrompt(e)) alert("Lỗi: " + e.message);
+    }
     setLoading(false);
   };
 
@@ -521,6 +532,8 @@ export default function Pipeline() {
           )}
         </div>
       )}
+
+      {UpgradePromptUI}
     </div>
   );
 }
@@ -1113,7 +1126,7 @@ function DraftViewer({ draft, onBack }) {
             {contentViewMode === "preview" && (
               <div className="card" style={{ padding: 24 }}>
                 <div style={{ maxHeight: showFullContent ? "none" : 500, overflow: showFullContent ? "visible" : "hidden", position: "relative" }}>
-                  <div className="article-content-preview" style={{ fontSize: 15, lineHeight: 1.8 }} dangerouslySetInnerHTML={{ __html: content.html }} />
+                  <SafeHtml className="article-content-preview" style={{ fontSize: 15, lineHeight: 1.8 }} html={content.html} />
                   {!showFullContent && (
                     <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 80, background: "linear-gradient(transparent, var(--bg-card))", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 8 }}>
                       <button className="btn btn-primary btn-sm" onClick={() => setShowFullContent(true)}>{"📖"} Xem toàn bộ nội dung</button>
@@ -1390,7 +1403,7 @@ function DraftViewer({ draft, onBack }) {
                   {outline.metaDescription && <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>{outline.metaDescription}</div>}
                 </div>
               )}
-              <div className="article-content-preview" style={{ fontSize: 15, lineHeight: 1.8 }} dangerouslySetInnerHTML={{ __html: content.html }} />
+              <SafeHtml className="article-content-preview" style={{ fontSize: 15, lineHeight: 1.8 }} html={content.html} />
             </div>
 
             {p.sections?.images?.filter(i => i.status === "done" && i.url).length > 0 && (

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { api } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { Navigate } from "react-router-dom";
+import SafeHtml from "../components/SafeHtml";
 
 export default function AdminUsers() {
   const { user, loading: authLoading } = useAuth();
@@ -39,11 +40,8 @@ export default function AdminUsers() {
     loadUsers();
   }, [loadUsers]);
 
-  // Check admin authorization
+  // Check admin authorization — giữ flag, render-guard đặt sau tất cả hooks (rules of hooks)
   const isAdmin = Boolean(user?.role === "admin" || user?.isAdmin);
-  if (!authLoading && !isAdmin) {
-    return <Navigate to="/" replace />;
-  }
 
   // Summary Metrics
   const metrics = useMemo(() => {
@@ -95,6 +93,11 @@ export default function AdminUsers() {
       return true;
     });
   }, [users, searchTerm, planFilter, statusFilter]);
+
+  // Render-guard sau tất cả hooks — tránh lỗi rules-of-hooks khi redirect
+  if (!authLoading && !isAdmin) {
+    return <Navigate to="/" replace />;
+  }
 
   return (
     <div className="admin-users-page" style={{ paddingBottom: 60 }}>
@@ -1139,8 +1142,11 @@ function UserInspectionModal({ user, onClose }) {
                           {s.siteUrl}
                         </div>
                         <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                          User: <code>{s.username}</code> • App Password: <code>{s.appPassword}</code> • Chuyên mục:{" "}
-                          {s.categoriesCount}
+                          User: <code>{s.username}</code> • App Password:{" "}
+                          <code title="Đã ẩn vì bảo mật">
+                            {s.appPassword ? `${String(s.appPassword).slice(0, 4)}••••••••` : "—"}
+                          </code>{" "}
+                          • Chuyên mục: {s.categoriesCount}
                         </div>
                       </div>
                       <span className="badge badge-success" style={{ fontSize: 11 }}>
@@ -1574,10 +1580,10 @@ function ArticleReaderModal({ article, onClose }) {
           {viewTab === "content" && (
             <div>
               {article.html ? (
-                <div
+                <SafeHtml
                   className="article-content-preview"
                   style={{ fontSize: 14, lineHeight: 1.7, color: "var(--text-primary)" }}
-                  dangerouslySetInnerHTML={{ __html: article.html }}
+                  html={article.html}
                 />
               ) : article.content ? (
                 <div style={{ whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.6 }}>{article.content}</div>
@@ -1962,10 +1968,10 @@ function DraftReaderModal({ draft, onClose }) {
           {activeTab === "content" && (
             <div>
               {draft.article || draft.content || draft.html ? (
-                <div
+                <SafeHtml
                   className="article-content-preview"
                   style={{ fontSize: 14, lineHeight: 1.7, color: "var(--text-primary)" }}
-                  dangerouslySetInnerHTML={{ __html: draft.article || draft.content || draft.html }}
+                  html={draft.article || draft.content || draft.html}
                 />
               ) : pipeline.outline ? (
                 <div>

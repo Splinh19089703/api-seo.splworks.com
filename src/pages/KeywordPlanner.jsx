@@ -27,6 +27,20 @@ const COUNTRY_OPTIONS = {
   sg: { label: "🇸🇬 Singapore", shortLabel: "SG", language: "en" },
 };
 
+// Sparkline renderer (simple SVG) — module scope, không remount mỗi render
+function Sparkline({ data, width = 80, height = 20 }) {
+  if (!data || data.length === 0) return null;
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max - min || 1;
+  const points = data.map((v, i) => `${(i / (data.length - 1)) * width},${height - ((v - min) / range) * (height - 2) - 1}`).join(" ");
+  return (
+    <svg width={width} height={height} style={{ display: "block" }}>
+      <polyline fill="none" stroke="#6366f1" strokeWidth="1.5" points={points} />
+    </svg>
+  );
+}
+
 export default function KeywordPlanner() {
   // Input
   const [seedKeyword, setSeedKeyword] = useState("");
@@ -99,6 +113,26 @@ export default function KeywordPlanner() {
 
   // Reset page khi filter thay đổi
   useEffect(() => { setPage(1); }, [keywords, typeFilter, intentFilter, volumeMin, volumeMax, kdMax, sortBy, sortDir]);
+
+  // Nhận keyword import từ GSC (sessionStorage handoff — lưu ý ở GSC.jsx trước khi navigate)
+  useEffect(() => {
+    const imported = sessionStorage.getItem("gsc_import_kw");
+    if (imported) {
+      try {
+        const kwList = JSON.parse(imported);
+        if (Array.isArray(kwList) && kwList.length > 0) {
+          const avgVolume = Math.round(kwList.reduce((s, k) => s + (k.volume || 0), 0) / kwList.length);
+          setKeywords(kwList);
+          setStats({ total: kwList.length, avgVolume, avgKd: 0, byType: { main: kwList.length }, source: "Google Search Console" });
+          setMetricNotice(`Đã nhập ${kwList.length} từ khóa từ Google Search Console (lượt tìm ước tính từ impressions).`);
+          setPage(1);
+          setSelected(new Set());
+        }
+      } catch { /* bỏ qua JSON hỏng */ }
+      sessionStorage.removeItem("gsc_import_kw");
+      sessionStorage.removeItem("gsc_import_site");
+    }
+  }, []);
 
   const filtered = useMemo(() => {
     let list = [...keywords];
@@ -208,22 +242,6 @@ export default function KeywordPlanner() {
 
   // Volume bar width
   const maxVolume = useMemo(() => Math.max(...keywords.map(k => k.volume), 1), [keywords]);
-
-  // ===========================
-  // Sparkline renderer (simple SVG)
-  // ===========================
-  const Sparkline = ({ data, width = 80, height = 20 }) => {
-    if (!data || data.length === 0) return null;
-    const max = Math.max(...data);
-    const min = Math.min(...data);
-    const range = max - min || 1;
-    const points = data.map((v, i) => `${(i / (data.length - 1)) * width},${height - ((v - min) / range) * (height - 2) - 1}`).join(" ");
-    return (
-      <svg width={width} height={height} style={{ display: "block" }}>
-        <polyline fill="none" stroke="#6366f1" strokeWidth="1.5" points={points} />
-      </svg>
-    );
-  };
 
   return (
     <div className="page-container">
@@ -557,38 +575,6 @@ export default function KeywordPlanner() {
         seedKeyword={seedKeyword}
         onClose={() => setShowProjectPicker(false)}
       />
-      {false && showProjectPicker && (
-        <div className="modal-overlay" onClick={() => setShowProjectPicker(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
-            <div className="modal-header">
-              <h2 style={{ margin: 0 }}>📋 Thêm vào Dự án</h2>
-              <button className="btn-close" onClick={() => setShowProjectPicker(false)}>✕</button>
-            </div>
-            <div className="modal-body">
-              {projects.length === 0 ? (
-                <p style={{ color: "var(--text-muted)", textAlign: "center" }}>Không có dự án nào. Tạo dự án trước.</p>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {projects.map(p => (
-                    <button
-                      key={p.id}
-                      className="btn"
-                      style={{ textAlign: "left", padding: "12px 16px" }}
-                      onClick={async () => {
-                        // Future: Add keywords to project's KwPlan tab
-                        alert(`Sẽ thêm ${selected.size} từ khóa vào dự án "${p.name}" (tính năng đang phát triển)`);
-                        setShowProjectPicker(false);
-                      }}
-                    >
-                      📁 {p.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
