@@ -502,4 +502,20 @@ export const api = {
   getAdminAuditDetail: (userId, auditId) => fetchApi(`/admin/users/${userId}/audits/${auditId}`),
   getAdminUserKwPlans: (userId) => fetchApi(`/admin/users/${userId}/kwplans`),
   getAdminUserWpSites: (userId) => fetchApi(`/admin/users/${userId}/wp-sites`),
+
+  // ===== Social Hub =====
+  createSocialAccount: (data) => fetchApi("/social/accounts", { method: "POST", body: data }),
+  getSocialAccounts: () => fetchApi("/social/accounts"),
+  getSocialAccount: (id) => fetchApi(`/social/accounts/${id}`),
+  testSocialAccount: (id) => fetchApi(`/social/accounts/${id}/test`, { method: "POST" }),
+  updateSocialAccount: (id, data) => fetchApi(`/social/accounts/${id}`, { method: "PUT", body: data }),
+  deleteSocialAccount: (id) => fetchApi(`/social/accounts/${id}`, { method: "DELETE" }),
+  socialShare: (data) => fetchApi("/social/share", { method: "POST", body: data }),
+  socialPreviewUrl: (url) => fetchApi("/social/preview-url", { method: "POST", body: { url } }),
+  socialImportUrls: (data) => fetchApi("/social/import-urls", { method: "POST", body: data }),
+  getSocialQueue: () => fetchApi("/social/queue"),
+  updateSocialQueueItem: (id, data) => fetchApi(`/social/queue/${id}`, { method: "PUT", body: data }),
+  deleteSocialQueueItem: (id) => fetchApi(`/social/queue/${id}`, { method: "DELETE" }),
+  publishSocialQueueItem: (id) => fetchApi(`/social/queue/${id}/publish`, { method: "POST" }),
+  getSocialHistory: () => fetchApi("/social/history"),
 };

@@ -34,6 +34,7 @@ const MORE_ITEMS = [
   { path: "/woo", icon: "🛒", label: "WooCommerce" },
   { path: "/keyword-planner", icon: "📊", label: "Keyword" },
   { path: "/publish", icon: "📤", label: "Đăng bài" },
+  { path: "/social", icon: "📱", label: "Social" },
   { path: "/affiliate", icon: "🤝", label: "CTV" },
   { path: "/account", icon: "👤", label: "Tài khoản" },
   { path: "/settings", icon: "⚙️", label: "Cài đặt" },
@@ -302,6 +303,13 @@ export default function Layout() {
               {!features.multiPlatform && (
                 <span className="nav-badge nav-badge-lock" title="Đa nền tảng cần gói Pro+">🔒</span>
               )}
+            </NavLink>
+            <NavLink
+              to="/social"
+              className={({ isActive }) => (isActive ? "active" : "")}
+            >
+              <span className="nav-icon">📱</span> Social Hub
+              <span className="nav-badge" style={{ background: "var(--accent-green, #10b981)", color: "#fff", fontSize: 9, padding: "1px 5px", borderRadius: 8, fontWeight: 700, marginLeft: "auto" }}>Mới</span>
             </NavLink>
             {Boolean(user?.role === "admin" || user?.isAdmin) && (
               <NavLink
