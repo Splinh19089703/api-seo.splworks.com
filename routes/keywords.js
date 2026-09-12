@@ -219,10 +219,17 @@ router.post("/export", async (req, res) => {
       csvCell(kw.source),
     ].join(","));
 
-    const csv = "\uFEFF" + [headers.join(","), ...rows].join("\n");
+    const csv = "\uFEFF" + [headers.join(","), ...rows].join("\r\n");
+
+    const safeAscii = String(filename || "keyword-research")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[đĐ]/g, "d")
+      .replace(/[^a-zA-Z0-9_.-]/g, "_");
+    const encodedName = encodeURIComponent(`${filename || "keyword-research"}.csv`);
 
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}.csv"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${safeAscii}.csv"; filename*=UTF-8''${encodedName}`);
     res.send(csv);
   } catch (error) {
     res.status(500).json({ error: error.message });
