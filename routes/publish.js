@@ -221,6 +221,52 @@ router.post("/now", async (req, res) => {
           } catch (idxErr) {
             console.warn("[Publish] Auto-index trigger failed:", idxErr.message);
           }
+
+          // ===== Auto Social Share: Share published URL to connected Facebook Pages =====
+          setImmediate(async () => {
+            try {
+              const socialAccounts = await storage.getAllForUser("social-accounts", req.userId);
+              const autoShareAccounts = socialAccounts.filter(a => a.platform === "facebook" && a.active && a.autoShare);
+              if (!autoShareAccounts.length) return;
+
+              const facebookService = require("../services/facebook-service");
+              for (const fb of autoShareAccounts) {
+                const creds = fb.credentials || {};
+                const pageId = creds.pageId || fb.pageId;
+                const pageToken = creds.pageToken;
+                if (!pageId || !pageToken) continue;
+                try {
+                  const shareResult = await facebookService.publishLink(pageId, pageToken, {
+                    link: publishedUrl,
+                    message: article.metaDescription || article.title || "",
+                  });
+                  // Save to social history
+                  await storage.createForUser("social-history", {
+                    accountId: fb.id,
+                    accountName: fb.pageName,
+                    platform: "facebook",
+                    type: "link",
+                    link: publishedUrl,
+                    message: article.metaDescription || article.title || "",
+                    status: "success",
+                    result: shareResult,
+                    error: null,
+                    source: "auto-publish",
+                    sharedAt: new Date().toISOString(),
+                  }, req.userId);
+                  // Update stats
+                  await storage.update("social-accounts", fb.id, {
+                    stats: { totalShared: (fb.stats?.totalShared || 0) + 1, lastShared: new Date().toISOString() },
+                  });
+                  console.log(`[Publish] Auto-shared to FB: ${fb.pageName}`);
+                } catch (fbErr) {
+                  console.warn(`[Publish] Auto-share to ${fb.pageName} failed: ${fbErr.message}`);
+                }
+              }
+            } catch (socialErr) {
+              console.warn("[Publish] Auto social share failed:", socialErr.message);
+            }
+          });
         }
       } catch (pubErr) {
         // Save failed history

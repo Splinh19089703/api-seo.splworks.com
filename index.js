@@ -64,6 +64,8 @@ app.use("/api/keywords", licenseGuard, aiRateLimiter, require("./routes/keywords
 app.get("/api/gsc/callback", require("./routes/gsc").callbackHandler);
 app.use("/api/gsc", licenseGuard, featureGate("googleSearchConsole"), require("./routes/gsc").router);
 app.use("/api/affiliate", licenseGuard, require("./routes/affiliate"));
+// Social: mỗi user tự nhập Page Token (multi-tenant, không dùng OAuth chung)
+app.use("/api/social", licenseGuard, require("./routes/social"));
 app.use("/api/admin", require("./routes/admin-inspect"));
 
 // ===== Webhook (public — plugin authenticates via HMAC signature) =====
@@ -143,4 +145,12 @@ app.listen(PORT, () => {
 
   // Dọn ảnh cũ hơn 30 ngày mỗi giờ
   setInterval(() => imageStore.cleanupOldFiles(), 60 * 60 * 1000);
+
+  // Start social queue worker (publish scheduled social posts)
+  try {
+    const { startWorker } = require("./services/social-queue-worker");
+    startWorker();
+  } catch (err) {
+    console.warn("[Social Queue] Worker start failed:", err.message);
+  }
 });
