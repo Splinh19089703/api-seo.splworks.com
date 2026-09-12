@@ -201,7 +201,8 @@ export default function KeywordPlanner() {
     setExporting(true);
     setExportError("");
     try {
-      await api.kwExport(toExport, `kw-${seedKeyword.replace(/\s+/g, "-")}`);
+      const safeName = seedKeyword.trim() ? `kw-${seedKeyword.trim().replace(/\s+/g, "-")}` : "keyword-research";
+      await api.kwExport(toExport, safeName);
     } catch (err) {
       setExportError(err.message || "Export thất bại, thử lại.");
     } finally {

@@ -440,20 +440,63 @@ export const api = {
   kwRelated: (data) =>
     fetchApi("/keywords/related", { method: "POST", body: data }),
   kwExport: async (keywords, filename) => {
-    const headers = { "Content-Type": "application/json" };
-    const token = getAuthToken();
-    if (token) headers.Authorization = `Bearer ${token}`; // không gửi "Bearer null" khi chưa login
-    const resp = await fetch(`${API_BASE}/keywords/export`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ keywords, filename }),
-    });
-    if (!resp.ok) throw new Error("Export thất bại");
-    const blob = await resp.blob();
+    const defaultFilename = filename || "keyword-research";
+    let downloaded = false;
+
+    // 1. Thử gọi backend /keywords/export
+    try {
+      const headers = { "Content-Type": "application/json" };
+      const token = getAuthToken();
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const resp = await fetch(`${API_BASE}/keywords/export`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ keywords, filename: defaultFilename }),
+      });
+      if (resp.ok) {
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${defaultFilename}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        downloaded = true;
+      }
+    } catch (e) {
+      console.warn("Backend export failed, falling back to client-side generation:", e);
+    }
+
+    if (downloaded) return;
+
+    // 2. Fallback client-side: tự tạo file CSV chuẩn UTF-8 BOM để mở trên Excel không bao giờ lỗi
+    const csvCell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const headers = [
+      "Keyword", "Type", "Volume", "KD", "CPC", "Intent", "Opportunity",
+      "Confidence", "Metric Source", "Word Count", "Source"
+    ];
+    const rows = (keywords || []).map((kw) => [
+      csvCell(kw.keyword),
+      csvCell(kw.type),
+      kw.volume ?? "",
+      kw.kd ?? "",
+      kw.cpc ?? "",
+      csvCell(kw.intent),
+      kw.opportunity ?? "",
+      kw.confidence ?? "",
+      csvCell(kw.metricSource),
+      kw.wordCount ?? "",
+      csvCell(kw.source),
+    ].join(","));
+
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${filename || "keyword-research"}.csv`;
+    a.download = `${defaultFilename}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
