@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 
 // ===== Platform Definitions =====
@@ -19,7 +20,11 @@ const PLATFORMS = [
       { key: "integrationToken", label: "Integration Token", placeholder: "Token từ Settings > Integration tokens", type: "password" },
       { key: "authorId", label: "Author ID", placeholder: "Lấy từ /v1/me", type: "text" },
     ]},
-  { id: "facebook", name: "Facebook", icon: "📘", auth: "OAuth", color: "#1877f2", phase: 2 },
+  { id: "facebook", name: "Facebook", icon: "📘", auth: "Meta Graph API", color: "#1877f2", phase: 1,
+    fields: [
+      { key: "pageId", label: "Facebook Page ID", placeholder: "VD: 102938475610293", type: "text" },
+      { key: "pageToken", label: "Page Access Token", placeholder: "EAABwz...", type: "password" },
+    ]},
   { id: "zalo", name: "Zalo OA", icon: "💬", auth: "REST API", color: "#0068ff", phase: 2 },
   { id: "instagram", name: "Instagram", icon: "📷", auth: "OAuth", color: "#e4405f", phase: 2 },
   { id: "threads", name: "Threads", icon: "🧵", auth: "OAuth", color: "#000000", phase: 2 },
@@ -58,9 +63,36 @@ export default function Publishing() {
 
   const loadAccounts = useCallback(async () => {
     try {
-      const data = await api.getPublishAccounts();
-      setAccounts(data);
-    } catch { setAccounts([]); }
+      const [pubData, socData] = await Promise.all([
+        api.getPublishAccounts().catch(() => []),
+        api.getSocialAccounts().catch(() => []),
+      ]);
+
+      const formattedSoc = (socData || []).map((sa) => ({
+        id: sa.id,
+        platform: "facebook",
+        name: sa.pageName || sa.name || `Facebook Page (${sa.pageId || ""})`,
+        active: sa.active !== false,
+        credentials: sa.credentials || {},
+        defaults: { status: "publish" },
+        stats: {
+          totalPublished: sa.stats?.totalShared || 0,
+          lastPublished: sa.stats?.lastShared || null,
+        },
+        pageAvatar: sa.pageAvatar,
+        fanCount: sa.fanCount,
+        autoShare: sa.autoShare,
+        isSocialAccount: true,
+      }));
+
+      const combined = [
+        ...(pubData || []),
+        ...formattedSoc.filter((s) => !(pubData || []).some((p) => p.id === s.id)),
+      ];
+      setAccounts(combined);
+    } catch {
+      setAccounts([]);
+    }
   }, []);
 
   useEffect(() => {
@@ -117,6 +149,7 @@ export default function Publishing() {
 
 // ===== Accounts Tab =====
 function AccountsTab({ accounts, onRefresh, modal, setModal }) {
+  const navigate = useNavigate();
   const [expandedPlatform, setExpandedPlatform] = useState(null);
   const [wpSites, setWpSites] = useState([]);
   const [wpSitesLoaded, setWpSitesLoaded] = useState(false);
@@ -148,7 +181,7 @@ function AccountsTab({ accounts, onRefresh, modal, setModal }) {
           const accts = accountsByPlatform[p.id] || [];
           const isReady = p.phase === 1;
           const isExpanded = expandedPlatform === p.id;
-          const hasMultiAccount = p.id === "wordpress"; // E4: WP supports multi-account expand
+          const hasMultiAccount = p.id === "wordpress" || p.id === "facebook";
 
           return (
             <div key={p.id} className="card" style={{
@@ -168,11 +201,11 @@ function AccountsTab({ accounts, onRefresh, modal, setModal }) {
               {/* Card header — clickable for expand */}
               <div
                 style={{
-                  padding: 16, cursor: hasMultiAccount && isReady ? "pointer" : "default",
+                  padding: 16, cursor: hasMultiAccount && isReady && accts.length > 0 ? "pointer" : "default",
                   transition: "background 0.2s",
                 }}
-                onClick={() => hasMultiAccount && isReady && toggleExpand(p.id)}
-                onMouseEnter={(e) => { if (hasMultiAccount && isReady) e.currentTarget.style.background = `${p.color}08`; }}
+                onClick={() => hasMultiAccount && isReady && accts.length > 0 && toggleExpand(p.id)}
+                onMouseEnter={(e) => { if (hasMultiAccount && isReady && accts.length > 0) e.currentTarget.style.background = `${p.color}08`; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
@@ -203,13 +236,13 @@ function AccountsTab({ accounts, onRefresh, modal, setModal }) {
                     )}
                   </div>
                   <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                    {isReady && !hasMultiAccount && (
+                    {isReady && (!hasMultiAccount || accts.length === 0) && (
                       <button className="btn btn-secondary btn-sm" style={{ fontSize: 11, padding: "4px 10px" }}
                         onClick={(e) => { e.stopPropagation(); setModal({ mode: "add", platform: p }); }}>
                         🔗 Kết nối
                       </button>
                     )}
-                    {hasMultiAccount && isReady && (
+                    {hasMultiAccount && isReady && accts.length > 0 && (
                       <button
                         className={`btn btn-sm ${isExpanded ? "btn-primary" : "btn-secondary"}`}
                         style={{ fontSize: 11, padding: "4px 10px", display: "flex", alignItems: "center", gap: 4 }}
@@ -245,7 +278,7 @@ function AccountsTab({ accounts, onRefresh, modal, setModal }) {
               </div>
 
               {/* E4: Expanded WordPress panel */}
-              {isExpanded && hasMultiAccount && (
+              {isExpanded && p.id === "wordpress" && (
                 <div style={{
                   borderTop: "1px solid var(--border-light)",
                   padding: 16, background: `${p.color}04`,
@@ -354,6 +387,84 @@ function AccountsTab({ accounts, onRefresh, modal, setModal }) {
                   </button>
                 </div>
               )}
+
+              {/* Expanded Facebook panel */}
+              {isExpanded && p.id === "facebook" && (
+                <div style={{
+                  borderTop: "1px solid var(--border-light)",
+                  padding: 16, background: `${p.color}04`,
+                  animation: "fadeIn 0.2s ease-out",
+                }}>
+                  <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+                  {accts.length > 0 && (
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 8, letterSpacing: "0.5px" }}>
+                        📘 Fanpage Facebook đã kết nối ({accts.length})
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 10 }}>
+                        {accts.map(a => (
+                          <div key={a.id} style={{
+                            padding: "12px 14px", borderRadius: 10,
+                            border: "1px solid var(--border-light)", background: "var(--bg-secondary)",
+                            display: "flex", alignItems: "center", gap: 10,
+                          }}>
+                            <div style={{
+                              width: 34, height: 34, borderRadius: "50%", background: "#1877f2",
+                              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0,
+                              overflow: "hidden", color: "#fff",
+                            }}>
+                              {a.pageAvatar ? (
+                                <img src={a.pageAvatar} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                              ) : (
+                                "📘"
+                              )}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {a.name}
+                              </div>
+                              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                                {a.fanCount > 0 ? `${a.fanCount.toLocaleString("vi-VN")} người theo dõi` : a.credentials?.pageId ? `ID: ${a.credentials.pageId}` : "Facebook Fanpage"}
+                              </div>
+                            </div>
+                            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                              <button className="btn btn-secondary btn-sm" style={{ padding: "4px 8px", fontSize: 10 }}
+                                title="Kiểm tra kết nối"
+                                onClick={async () => {
+                                  try {
+                                    const res = await api.testPublishAccount(a.id);
+                                    alert(res.message || (res.success ? "Kết nối tốt!" : "Lỗi"));
+                                  } catch (err) { alert("Lỗi: " + err.message); }
+                                }}>🔌</button>
+                              <button className="btn btn-secondary btn-sm" style={{ padding: "4px 8px", fontSize: 10 }}
+                                title="Chỉnh sửa"
+                                onClick={() => setModal({ mode: "edit", platform: p, account: a })}>✏️</button>
+                              <button className="btn btn-secondary btn-sm" style={{ padding: "4px 8px", fontSize: 10, color: "var(--accent-red)" }}
+                                title="Xóa"
+                                onClick={async () => {
+                                  if (!confirm("Xoá kết nối Fanpage này?")) return;
+                                  try { await api.deletePublishAccount(a.id); onRefresh(); }
+                                  catch (err) { alert("Lỗi xóa: " + err.message); }
+                                }}>🗑</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <button className="btn btn-primary btn-sm" style={{ fontSize: 12, padding: "8px 16px", flex: 1 }}
+                      onClick={() => setModal({ mode: "add", platform: p })}>
+                      ➕ Thêm Fanpage Facebook mới
+                    </button>
+                    <button className="btn btn-secondary btn-sm" style={{ fontSize: 12, padding: "8px 16px" }}
+                      onClick={() => navigate("/social")}>
+                      📱 Mở Social Hub (Đặt lịch & AI Caption) ↗
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
@@ -380,7 +491,7 @@ function AccountModal({ modal, onClose, onSaved }) {
   useEffect(() => {
     if (mode === "edit" && account?.id) {
       api.getPublishAccount(account.id).then(full => {
-        setForm({ name: full.name, credentials: full.credentials || {}, defaults: full.defaults || { status: "draft" } });
+        setForm({ name: full.name || full.pageName || "", credentials: full.credentials || {}, defaults: full.defaults || { status: "draft" } });
       }).catch(() => {});
     }
   }, [mode, account]);
@@ -444,6 +555,21 @@ function AccountModal({ modal, onClose, onSaved }) {
           </h2>
           <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "var(--text-muted)" }}>✕</button>
         </div>
+
+        {platform.id === "facebook" && (
+          <div style={{
+            background: "rgba(24, 119, 242, 0.08)", border: "1px solid rgba(24, 119, 242, 0.2)",
+            borderRadius: 8, padding: "10px 14px", marginBottom: 14, fontSize: 12, lineHeight: 1.5,
+          }}>
+            <div style={{ fontWeight: 600, color: "#1877f2", marginBottom: 4 }}>
+              💡 Hướng dẫn kết nối Fanpage Facebook:
+            </div>
+            <div style={{ color: "var(--text-muted)", fontSize: 11 }}>
+              • Nhập <b>Facebook Page ID</b> và <b>Page Access Token</b> (có quyền <code>pages_manage_posts, pages_read_engagement</code>).<br />
+              • Hệ thống sẽ tự động đồng bộ sang <b>Social Hub</b> để bạn đặt lịch & tạo AI Caption.
+            </div>
+          </div>
+        )}
 
         <div className="form-group">
           <label>Tên hiển thị</label>
