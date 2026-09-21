@@ -561,4 +561,5 @@ export const api = {
   deleteSocialQueueItem: (id) => fetchApi(`/social/queue/${id}`, { method: "DELETE" }),
   publishSocialQueueItem: (id) => fetchApi(`/social/queue/${id}/publish`, { method: "POST" }),
   getSocialHistory: () => fetchApi("/social/history"),
+  generateSocialCaption: (data) => fetchApi("/social/generate-caption", { method: "POST", body: data }),
 };
