@@ -455,7 +455,9 @@ router.post("/generate-caption", async (req, res) => {
     }
 
     const aiService = require("../services/ai-service");
-    const settings = (await storage.getForUser("settings", "ai", req.userId)) || {};
+    const { resolveApiKeys } = require("../services/api-key-pool");
+    const settings = (await storage.getSettings()) || {};
+    const apiKeys = await resolveApiKeys(req.userId, req.license);
 
     const prompt = `Bạn là chuyên gia Social Media Marketing hàng đầu. Hãy viết 1 caption Facebook cực kỳ cuốn hút, giữ chân người xem và kích thích tương tác, click vào xem bài viết.
 
@@ -474,7 +476,7 @@ LƯU Ý:
 - Tuyệt đối tự nhiên, tiếng Việt chuẩn, không xưng hô máy móc hay chào hỏi khách sáo.
 - Trả về DUY NHẤT nội dung caption hoàn chỉnh, không kèm giải thích hay ghi chú thêm.`;
 
-    const caption = await aiService.generate(prompt, settings, {});
+    const caption = await aiService.generate(prompt, settings, { apiKeys });
     res.json({ caption: caption ? caption.trim() : "" });
   } catch (e) {
     console.error("[Social] Generate caption error:", e.message);
