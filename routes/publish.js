@@ -8,9 +8,37 @@ const publishService = require("../services/publish-service");
 // GET all accounts
 router.get("/accounts", async (req, res) => {
   try {
-    const accounts = await storage.getAllForUser("publishing-accounts", req.userId);
+    const [pubAccounts, socAccounts] = await Promise.all([
+      storage.getAllForUser("publishing-accounts", req.userId),
+      storage.getAllForUser("social-accounts", req.userId),
+    ]);
+
+    // Map Facebook accounts from social-accounts so they appear in /publish
+    const formattedSoc = (socAccounts || []).map(sa => ({
+      id: sa.id,
+      platform: sa.platform || "facebook",
+      name: sa.pageName || sa.name || `Facebook Page (${sa.pageId || ""})`,
+      active: sa.active !== false,
+      credentials: sa.credentials || {},
+      defaults: { status: "publish" },
+      stats: {
+        totalPublished: sa.stats?.totalShared || 0,
+        lastPublished: sa.stats?.lastShared || null,
+      },
+      pageAvatar: sa.pageAvatar,
+      fanCount: sa.fanCount,
+      autoShare: sa.autoShare,
+      isSocialAccount: true,
+    }));
+
+    // Combine accounts (exclude duplicates if any)
+    const combined = [
+      ...pubAccounts,
+      ...formattedSoc.filter(s => !pubAccounts.some(p => p.id === s.id)),
+    ];
+
     // Hide sensitive credentials in list view
-    const safe = accounts.map(a => ({
+    const safe = combined.map(a => ({
       ...a,
       credentials: Object.fromEntries(
         Object.entries(a.credentials || {}).map(([k, v]) =>
@@ -27,7 +55,17 @@ router.get("/accounts", async (req, res) => {
 // GET single account (full credentials for edit)
 router.get("/accounts/:id", async (req, res) => {
   try {
-    const account = await storage.getByIdForUser("publishing-accounts", req.params.id, req.userId);
+    let account = await storage.getByIdForUser("publishing-accounts", req.params.id, req.userId);
+    if (!account) {
+      account = await storage.getByIdForUser("social-accounts", req.params.id, req.userId);
+      if (account) {
+        account = {
+          ...account,
+          name: account.pageName || account.name || "Facebook Page",
+          defaults: account.defaults || { status: "publish" },
+        };
+      }
+    }
     if (!account) return res.status(404).json({ error: "Account not found" });
     res.json(account);
   } catch (e) {
@@ -38,6 +76,43 @@ router.get("/accounts/:id", async (req, res) => {
 // POST create account
 router.post("/accounts", async (req, res) => {
   try {
+    if (req.body.platform === "facebook") {
+      const facebookService = require("../services/facebook-service");
+      const creds = req.body.credentials || {};
+      let pageName = req.body.name;
+      let pageAvatar = null;
+      let fanCount = 0;
+      let category = null;
+
+      try {
+        if (creds.pageId && creds.pageToken) {
+          const info = await facebookService.getPageInfo(creds.pageId, creds.pageToken);
+          pageName = info.name || pageName;
+          pageAvatar = info.picture?.data?.url || null;
+          fanCount = info.fan_count || 0;
+          category = info.category || null;
+        }
+      } catch (err) {
+        console.warn("[Publish] Could not fetch FB page info:", err.message);
+      }
+
+      // Save to social-accounts so Social Hub sees it too!
+      const socAccount = await storage.createForUser("social-accounts", {
+        platform: "facebook",
+        pageId: creds.pageId,
+        pageName: pageName || "Facebook Page",
+        pageAvatar,
+        fanCount,
+        category,
+        credentials: { pageId: creds.pageId, pageToken: creds.pageToken },
+        active: req.body.active !== false,
+        autoShare: true,
+        stats: { totalShared: 0, lastShared: null },
+      }, req.userId);
+
+      return res.status(201).json(socAccount);
+    }
+
     const account = await storage.createForUser("publishing-accounts", {
       platform: req.body.platform,
       name: req.body.name || req.body.platform,
@@ -55,10 +130,25 @@ router.post("/accounts", async (req, res) => {
 // PUT update account
 router.put("/accounts/:id", async (req, res) => {
   try {
-    const existing = await storage.getByIdForUser("publishing-accounts", req.params.id, req.userId);
+    let existing = await storage.getByIdForUser("publishing-accounts", req.params.id, req.userId);
+    let collection = "publishing-accounts";
+    if (!existing) {
+      existing = await storage.getByIdForUser("social-accounts", req.params.id, req.userId);
+      collection = "social-accounts";
+    }
     if (!existing) return res.status(404).json({ error: "Account not found" });
     const { userId: _userId, ...updates } = req.body;
-    const updated = await storage.update("publishing-accounts", req.params.id, updates);
+
+    // Synchronize social-accounts fields if updating Facebook
+    if (collection === "social-accounts") {
+      if (updates.name) updates.pageName = updates.name;
+      if (updates.credentials) {
+        updates.credentials = { ...existing.credentials, ...updates.credentials };
+        if (updates.credentials.pageId) updates.pageId = updates.credentials.pageId;
+      }
+    }
+
+    const updated = await storage.update(collection, req.params.id, updates);
     res.json(updated);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -68,9 +158,14 @@ router.put("/accounts/:id", async (req, res) => {
 // DELETE account
 router.delete("/accounts/:id", async (req, res) => {
   try {
-    const existing = await storage.getByIdForUser("publishing-accounts", req.params.id, req.userId);
+    let existing = await storage.getByIdForUser("publishing-accounts", req.params.id, req.userId);
+    let collection = "publishing-accounts";
+    if (!existing) {
+      existing = await storage.getByIdForUser("social-accounts", req.params.id, req.userId);
+      collection = "social-accounts";
+    }
     if (!existing) return res.status(404).json({ error: "Account not found" });
-    await storage.delete("publishing-accounts", req.params.id);
+    await storage.delete(collection, req.params.id);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -80,7 +175,10 @@ router.delete("/accounts/:id", async (req, res) => {
 // POST test connection
 router.post("/accounts/:id/test", async (req, res) => {
   try {
-    const account = await storage.getByIdForUser("publishing-accounts", req.params.id, req.userId);
+    let account = await storage.getByIdForUser("publishing-accounts", req.params.id, req.userId);
+    if (!account) {
+      account = await storage.getByIdForUser("social-accounts", req.params.id, req.userId);
+    }
     if (!account) return res.status(404).json({ error: "Account not found" });
     const result = await publishService.testConnection(account);
     res.json(result);
@@ -147,7 +245,10 @@ router.post("/now", async (req, res) => {
     // Publish to each account
     const results = [];
     for (const accountId of accountIds) {
-      const account = await storage.getByIdForUser("publishing-accounts", accountId, req.userId);
+      let account = await storage.getByIdForUser("publishing-accounts", accountId, req.userId);
+      if (!account) {
+        account = await storage.getByIdForUser("social-accounts", accountId, req.userId);
+      }
       if (!account) {
         results.push({ accountId, success: false, error: "Account not found" });
         continue;
@@ -157,7 +258,7 @@ router.post("/now", async (req, res) => {
       if (account.platform !== "wordpress" && !req.license?.features?.multiPlatform) {
         results.push({
           accountId,
-          accountName: account.name,
+          accountName: account.name || account.pageName,
           platform: account.platform,
           success: false,
           error: `Đăng lên ${account.platform} cần gói Pro trở lên`,
@@ -189,7 +290,7 @@ router.post("/now", async (req, res) => {
           articleType: articleType || "standalone",
           projectId: projectId || null,
           accountId: account.id,
-          accountName: account.name,
+          accountName: account.name || account.pageName,
           platform: account.platform,
           status: "success",
           result,
@@ -197,15 +298,31 @@ router.post("/now", async (req, res) => {
           publishedAt: new Date().toISOString(),
         }, req.userId);
 
-        // Update account stats
-        await storage.update("publishing-accounts", account.id, {
-          stats: {
-            totalPublished: (account.stats?.totalPublished || 0) + 1,
-            lastPublished: new Date().toISOString(),
-          },
-        });
+        // Update account stats in corresponding collection
+        const isPub = await storage.getByIdForUser("publishing-accounts", account.id, req.userId);
+        if (isPub) {
+          await storage.update("publishing-accounts", account.id, {
+            stats: {
+              totalPublished: (account.stats?.totalPublished || 0) + 1,
+              lastPublished: new Date().toISOString(),
+            },
+          });
+        } else {
+          await storage.update("social-accounts", account.id, {
+            stats: {
+              totalShared: (account.stats?.totalShared || 0) + 1,
+              lastShared: new Date().toISOString(),
+            },
+          });
+        }
 
-        results.push({ accountId, accountName: account.name, platform: account.platform, success: true, ...result });
+        results.push({
+          accountId,
+          accountName: account.name || account.pageName,
+          platform: account.platform,
+          success: true,
+          ...result,
+        });
 
         // ===== Auto Indexer: Submit published URL to Bing/Google =====
         const publishedUrl = result?.url || result?.link || result?.postUrl;

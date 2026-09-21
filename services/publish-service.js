@@ -143,6 +143,52 @@ class TelegramStrategy {
   async uploadImage() { return null; }
 }
 
+class FacebookStrategy {
+  async publish(account, article, options = {}) {
+    const creds = account.credentials || {};
+    const pageId = creds.pageId || account.pageId;
+    const pageToken = creds.pageToken;
+    if (!pageId || !pageToken) throw new Error("Thiếu Page ID hoặc Page Access Token.");
+
+    const facebookService = require("./facebook-service");
+
+    const excerpt = (article.content || "")
+      .replace(/<[^>]*>/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .substring(0, 300);
+
+    const message = options.message || `${article.title}\n\n${excerpt}...`;
+    const link = options.link || article.url || article.permalink;
+
+    if (link) {
+      const res = await facebookService.publishLink(pageId, pageToken, { link, message });
+      return { postId: res.postId, url: res.url, status: "published", title: article.title };
+    } else if (article.thumbnailUrl || article.featuredImage) {
+      const res = await facebookService.publishPhoto(pageId, pageToken, {
+        url: article.thumbnailUrl || article.featuredImage,
+        caption: message,
+      });
+      return { postId: res.postId, url: res.url, status: "published", title: article.title };
+    } else {
+      const res = await facebookService.publishTextPost(pageId, pageToken, { message });
+      return { postId: res.postId, url: res.url, status: "published", title: article.title };
+    }
+  }
+
+  async testConnection(account) {
+    const creds = account.credentials || {};
+    const pageId = creds.pageId || account.pageId;
+    const pageToken = creds.pageToken;
+    if (!pageId || !pageToken) throw new Error("Thiếu Page ID hoặc Page Access Token.");
+    const facebookService = require("./facebook-service");
+    return facebookService.testConnection(pageId, pageToken);
+  }
+
+  async getCategories() { return []; }
+  async uploadImage() { return null; }
+}
+
 // Stub strategies for platforms not yet implemented
 class StubStrategy {
   constructor(name) { this.name = name; }
@@ -161,8 +207,8 @@ class PublishService {
       blogger: new BloggerStrategy(),
       medium: new MediumStrategy(),
       telegram: new TelegramStrategy(),
-      // Stubs — will be implemented in Phase 2
-      facebook: new StubStrategy("Facebook"),
+      facebook: new FacebookStrategy(),
+      // Stubs — will be implemented in future phases
       zalo: new StubStrategy("Zalo OA"),
       instagram: new StubStrategy("Instagram"),
       threads: new StubStrategy("Threads"),
