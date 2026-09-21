@@ -237,6 +237,7 @@ router.post("/accounts/:id/test", async (req, res) => {
           pageName: result.pageInfo.name || account.pageName,
           pageAvatar: result.pageInfo.picture || account.pageAvatar,
           fanCount: result.pageInfo.fanCount || account.fanCount,
+          category: result.pageInfo.category || account.category,
         });
       }
 

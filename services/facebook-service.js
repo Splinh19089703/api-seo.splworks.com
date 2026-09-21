@@ -87,14 +87,36 @@ class FacebookService {
    * Get page info — dùng để test connection + lấy tên/avatar Page
    */
   async getPageInfo(pageId, pageToken) {
-    const resp = await axios.get(`${GRAPH_API}/${pageId}`, {
-      params: {
-        access_token: pageToken,
-        fields: "id,name,picture,fan_count,category,link,verification_status",
-      },
-      timeout: 10000,
-    });
-    return resp.data;
+    try {
+      // First try with followers_count (New Page Experience standard)
+      const resp = await axios.get(`${GRAPH_API}/${pageId}`, {
+        params: {
+          access_token: pageToken,
+          fields: "id,name,picture,category,link,followers_count",
+        },
+        timeout: 10000,
+      });
+      return {
+        ...resp.data,
+        fan_count: resp.data.followers_count || 0,
+      };
+    } catch (err) {
+      // If error code is 100 (non-existing field), fallback to core fields universally supported
+      if (err.response?.data?.error?.code === 100) {
+        const fallbackResp = await axios.get(`${GRAPH_API}/${pageId}`, {
+          params: {
+            access_token: pageToken,
+            fields: "id,name,picture,category,link",
+          },
+          timeout: 10000,
+        });
+        return {
+          ...fallbackResp.data,
+          fan_count: 0,
+        };
+      }
+      throw err;
+    }
   }
 
   /**
@@ -103,12 +125,13 @@ class FacebookService {
   async testConnection(pageId, pageToken) {
     try {
       const info = await this.getPageInfo(pageId, pageToken);
+      const followerText = info.fan_count > 0 ? ` (${info.fan_count.toLocaleString("vi-VN")} người theo dõi)` : "";
       return {
         success: true,
-        message: `Kết nối thành công! Page: ${info.name} (${info.fan_count || 0} người theo dõi)`,
+        message: `Kết nối thành công! Page: ${info.name || "Facebook Page"}${followerText}`,
         pageInfo: {
           name: info.name,
-          fanCount: info.fan_count,
+          fanCount: info.fan_count || 0,
           category: info.category,
           picture: info.picture?.data?.url || null,
           link: info.link,
