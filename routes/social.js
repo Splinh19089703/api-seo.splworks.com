@@ -17,6 +17,7 @@
  *   === Share / Publish ===
  *   POST /api/social/share                      → Share link lên Page(s)
  *   POST /api/social/preview-url                → Preview OG data của URL
+ *   POST /api/social/generate-caption           → AI viết caption Facebook từ link/title
  *
  *   === Batch Import URLs ===
  *   POST /api/social/import-urls                → Import list URL → queue
@@ -437,6 +438,45 @@ router.post("/preview-url", async (req, res) => {
     const ogData = await scrapeUrl(url);
     res.json(ogData);
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * POST /generate-caption — AI generate engaging Facebook caption
+ * Body: { url, title, description, tone }
+ */
+router.post("/generate-caption", async (req, res) => {
+  try {
+    const { url, title, description, tone = "engaging" } = req.body;
+    if (!title && !url && !description) {
+      return res.status(400).json({ error: "Cần cung cấp link hoặc tiêu đề bài viết" });
+    }
+
+    const aiService = require("../services/ai-service");
+    const settings = (await storage.getForUser("settings", "ai", req.userId)) || {};
+
+    const prompt = `Bạn là chuyên gia Social Media Marketing hàng đầu. Hãy viết 1 caption Facebook cực kỳ cuốn hút, giữ chân người xem và kích thích tương tác, click vào xem bài viết.
+
+THÔNG TIN BÀI VIẾT:
+- Tiêu đề: "${title || ""}"
+- Tóm tắt/Nội dung chính: "${description || ""}"
+- Đường dẫn bài viết: ${url || ""}
+
+YÊU CẦU ĐỊNH DẠNG:
+1. Hook mở đầu (1-2 câu): Giật tít, tò mò, đánh trúng insight hoặc nỗi đau, có emoji ấn tượng (🔥, 💡, 🚀, 📌, ⚠️).
+2. Tóm tắt giá trị (3-4 gạch đầu dòng): Mỗi gạch đầu dòng ngắn gọn (1 dòng), dùng emoji dẫn đầu (ví dụ: 👉, ✅, ⭐).
+3. Lời kêu gọi hành động (CTA): Mời đọc chi tiết bài viết (ví dụ: "👉 Chi tiết xem tại bài viết bên dưới 👇").
+4. Hashtags: 3 - 5 hashtags tiếng Việt phù hợp (có dấu và không dấu).
+
+LƯU Ý:
+- Tuyệt đối tự nhiên, tiếng Việt chuẩn, không xưng hô máy móc hay chào hỏi khách sáo.
+- Trả về DUY NHẤT nội dung caption hoàn chỉnh, không kèm giải thích hay ghi chú thêm.`;
+
+    const caption = await aiService.generate(prompt, settings, {});
+    res.json({ caption: caption ? caption.trim() : "" });
+  } catch (e) {
+    console.error("[Social] Generate caption error:", e.message);
     res.status(500).json({ error: e.message });
   }
 });

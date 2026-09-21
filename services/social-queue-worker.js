@@ -25,7 +25,7 @@ async function processSocialQueue() {
 
   try {
     // Get ALL queue items across all users (cron runs globally)
-    const allItems = storage.getAll("social-queue");
+    const allItems = (await storage.getAll("social-queue")) || [];
 
     // Filter: pending/scheduled items whose time has come
     const now = new Date();
