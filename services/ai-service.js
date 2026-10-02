@@ -47,6 +47,33 @@ class AiService {
 [/BỐI CẢNH]\n\n`;
   }
 
+  /**
+   * Build a corporate tone & language standard context block to prepend to prompts.
+   * Enforces professional enterprise tone and strictly forbids street slang / colloquialisms.
+   */
+  _buildCorporateToneContext(prompt = "", options = {}) {
+    if (options.skipTone) return "";
+    // If prompt is purely an English instruction to generate image prompt, tone rule isn't needed
+    if (/image prompt/i.test(prompt.substring(0, 100))) {
+      return "";
+    }
+
+    return `[QUY CHUẨN VĂN PHONG DOANH NGHIỆP - BẮT BUỘC TUÂN THỦ]
+• Văn phong: Chuẩn mực, chuyên nghiệp, chỉn chu, trang nhã, khách quan và đáng tin cậy. Dành cho doanh nghiệp B2B, chuyên gia và độc giả cao cấp.
+• Tiếng Việt: Luôn sử dụng tiếng Việt chuẩn xác, chuẩn ngữ pháp và có đầy đủ dấu.
+• ❌ TUYỆT ĐỐI KHÔNG DÙNG: Tiếng lóng, khẩu ngữ suồng sã, từ ngữ đường phố hoặc từ ngữ thiếu trang nhã trong mọi hoàn cảnh:
+  - Cấm: "tốc độ bàn thờ", "cắt cổ", "chém giá", "dỏm", "ngậm đắng nuốt cay", "chậm như rùa", "giữ con tấm", "nói bừa", "bốc phét", "vớ vẩn", "toát mồ hôi hột"...
+• ✅ TỪ NGỮ THAY THẾ CHUẨN DOANH NGHIỆP:
+  - "tốc độ bàn thờ" → thay bằng: "tốc độ vượt trội", "tốc độ tối đa", "tốc độ thần tốc"
+  - "cắt cổ", "chém giá" → thay bằng: "chi phí quá cao", "chi phí đắt đỏ", "đội giá ngoài dự kiến"
+  - "dỏm" → thay bằng: "kém chất lượng", "thiếu tiêu chuẩn"
+  - "ngậm đắng nuốt cay" → thay bằng: "gặp nhiều rủi ro", "chịu thiệt hại đáng tiếc"
+  - "chậm như rùa" → thay bằng: "tải chậm", "hiệu năng kém", "độ trễ cao"
+  - "giữ con tấm" → thay bằng: "giữ mã nguồn", "khóa quyền truy cập hệ thống"
+• Giữ vững sự tôn trọng độc giả, lập luận bằng số liệu, kỹ thuật và giải pháp thuyết phục.
+[/QUY CHUẨN VĂN PHONG]\n\n`;
+  }
+
   _generateCacheKey(provider, model, prompt, options = {}) {
     const data = JSON.stringify({
       provider,
@@ -132,8 +159,8 @@ class AiService {
     const enableCache = settings.aiProvider?.enableCache !== false;
     const cacheTtl = settings.aiProvider?.cacheTtl || 86400; // mặc định 24h
 
-    // Inject current date context — prevents AI from using stale 2024 data
-    const enrichedPrompt = this._buildDateContext() + prompt;
+    // Inject current date context and corporate tone standards
+    const enrichedPrompt = this._buildDateContext() + this._buildCorporateToneContext(prompt, options) + prompt;
 
     // Smart Routing: use textRouting chain (A2)
     const providers = this._getTextProviderChain(settings, apiKeys);

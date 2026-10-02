@@ -332,7 +332,7 @@ router.post("/drafts/:id/auto-pipeline", async (req, res) => {
 📋 DÀN Ý CHI TIẾT (BẮT BUỘC VIẾT ĐẦY ĐỦ CÁC HEADING):
 ${JSON.stringify(outline, null, 2)}
 
-${styleTemplate ? `🎭 PHONG CÁCH:\n${styleTemplate.content}` : "🎭 TONE & GIỌNG VĂN: Chuyên gia, thực chiến, đáng tin cậy, phân tích sâu sắc."}
+${styleTemplate ? `🎭 PHONG CÁCH:\n${styleTemplate.content}` : "🎭 TONE & GIỌNG VĂN: Chuyên gia doanh nghiệp, thực chiến, đáng tin cậy, phân tích sâu sắc. Tuyệt đối không dùng tiếng lóng, khẩu ngữ suồng sã hay từ ngữ thiếu chuẩn mực."}
 ${draft.customPrompt ? `📝 HƯỚNG DẪN BỔ SUNG: ${draft.customPrompt}` : ""}
 
 ⭐ BẮT BUỘC TUÂN THỦ TIÊU CHUẨN E-E-A-T:
@@ -708,7 +708,7 @@ router.post("/generate", async (req, res) => {
 📋 OUTLINE:
 ${JSON.stringify(outline, null, 2)}
 
-${styleTemplate ? `🎭 PHONG CÁCH:\n${styleTemplate.content}` : "🎭 TONE: Thân thiện, tự nhiên, như đang nói chuyện với bạn. KHÔNG dùng từ hoa mỹ."}
+${styleTemplate ? `🎭 PHONG CÁCH:\n${styleTemplate.content}` : "🎭 TONE: Chuyên nghiệp, chỉn chu, trang nhã chuẩn B2B. Tuyệt đối không dùng tiếng lóng, khẩu ngữ suồng sã hay từ ngữ đường phố."}
 
 ✅ YÊU CẦU:
 1. Viết theo outline trên CHÍNH XÁC
@@ -1172,7 +1172,7 @@ ${styleTemplate ? `Phong cách: ${styleTemplate.content.slice(0, 200)}` : ""}
 📋 DÀN Ý CHI TIẾT (BẮT BUỘC VIẾT ĐẦY ĐỦ CÁC HEADING):
 ${JSON.stringify(outline, null, 2)}
 
-${styleTemplate ? `🎭 PHONG CÁCH:\n${styleTemplate.content}` : "🎭 TONE & GIỌNG VĂN: Chuyên gia, thực chiến, đáng tin cậy, phân tích sâu sắc."}
+${styleTemplate ? `🎭 PHONG CÁCH:\n${styleTemplate.content}` : "🎭 TONE & GIỌNG VĂN: Chuyên gia doanh nghiệp, thực chiến, đáng tin cậy, phân tích sâu sắc. Tuyệt đối không dùng tiếng lóng, khẩu ngữ suồng sã hay từ ngữ thiếu chuẩn mực."}
 ${draft.customPrompt ? `📝 HƯỚNG DẪN BỔ SUNG: ${draft.customPrompt}` : ""}
 
 ⭐ BẮT BUỘC TUÂN THỦ TIÊU CHUẨN E-E-A-T:

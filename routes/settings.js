@@ -347,7 +347,7 @@ router.get("/prompts", async (req, res) => {
           type: "write-article",
           isDefault: true,
           content:
-            "PHONG CÁCH VIẾT: Giọng văn tự nhiên, lôi cuốn như đang chia sẻ với bạn đọc - Mở đầu bằng 1 câu hook - Xen kẽ ví dụ thực tế, con số minh họa - Liên kết tự giữa các phần mượt, có transition tự nhiên - KHÔNG viết theo kiểu template/công thức",
+            "PHONG CÁCH VIẾT: Giọng văn chuyên nghiệp, trang nhã, chỉn chu và đáng tin cậy chuẩn doanh nghiệp B2B - Mở đầu bằng 1 câu hook thực tế - Xen kẽ ví dụ thực tế, con số minh họa và số liệu cụ thể - Liên kết giữa các phần mượt mà, có transition tự nhiên - TUYỆT ĐỐI KHÔNG dùng tiếng lóng, khẩu ngữ suồng sã hay từ ngữ thiếu trang nhã - KHÔNG viết theo kiểu template/công thức sáo rỗng",
         },
         {
           name: "Thumbnail chuẩn",

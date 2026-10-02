@@ -2269,14 +2269,16 @@ ${(targetAudienceObj.misconceptions || []).length > 0 ?
 
 TONE & VOICE:
 - Ngôi "bạn" xuyên suốt — KHÔNG dùng "mình", "tôi", "chúng tôi"
-- Thông tin trước, cảm xúc sau — ưu tiên facts hữu ích
+- Thông tin trước, cảm xúc sau — ưu tiên facts hữu ích, số liệu cụ thể
+- Văn phong chuẩn mực, chuyên nghiệp, chỉn chu, trang nhã, đúng tầm vóc doanh nghiệp B2B
 - Mỗi đoạn <p> tối đa 80 từ — dễ đọc trên mobile
 - Dùng <ul>/<ol> cho danh sách — không viết gạch đầu dòng trong <p>
 
 TỪ TUYỆT ĐỐI KHÔNG DÙNG:
 "thiên đường", "tuyệt vời không thể tả", "không thể bỏ qua", "must-visit",
 "vô cùng ấn tượng", "cực kỳ đẹp", "đẹp đến mê hồn", "hút hồn",
-"check-in sống ảo", "trải nghiệm đáng nhớ", "đẳng cấp", "đừng bỏ lỡ"
+"check-in sống ảo", "trải nghiệm đáng nhớ", "đẳng cấp", "đừng bỏ lỡ",
+"tốc độ bàn thờ", "cắt cổ", "chém giá", "dỏm", "ngậm đắng nuốt cay", "chậm như rùa", "giữ con tấm", "nói bừa", "bốc phét"
 
 XỬ LÝ GIÁ CẢ (nếu có):
 - KHÔNG ghi giá cố định, luôn ghi range: "khoảng X - Y"

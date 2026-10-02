@@ -87,8 +87,8 @@ ${secondaryKeywords.length > 0 ? `🔗 KEYWORD PHỤ: ${secondaryKeywords.join("
 9. Cuối bài: FAQ 5 câu (format Q&A)
 10. Gợi ý 3 bài nên internal link đến
 
-🎭 TONE: Thân thiện, tự nhiên, như đang nói chuyện với bạn. KHÔNG dùng từ hoa mỹ.
-Viết câu ngắn, dễ scan. Dùng bullet points và bảng khi phù hợp.
+🎭 TONE: Chuyên nghiệp, chỉn chu, khách quan và đáng tin cậy chuẩn doanh nghiệp B2B. TUYỆT ĐỐI KHÔNG dùng tiếng lóng, khẩu ngữ suồng sã, từ ngữ đường phố (như "bàn thờ", "cắt cổ", "dỏm", "chém giá", "ngậm đắng nuốt cay", "chậm như rùa", "giữ con tấm"...). Dùng từ ngữ doanh nghiệp trang trọng, lập luận sắc bén bằng số liệu và giải pháp.
+Viết câu rõ ràng, mạch lạc, dễ scan. Dùng bullet points và bảng khi phù hợp.
 `;
 
     return prompt;
@@ -157,7 +157,7 @@ Viết câu ngắn, dễ scan. Dùng bullet points và bảng khi phù hợp.
 8. Title Tag + Meta Description chuẩn SEO
 9. Gợi ý 5 internal links
 
-🎭 TONE: Chuyên nghiệp nhưng thân thiện. Có kinh nghiệm thực chiến.
+🎭 TONE: Chuyên gia đầu ngành, văn phong doanh nghiệp cao cấp, đáng tin cậy và có kinh nghiệm thực chiến sâu sắc. TUYỆT ĐỐI KHÔNG dùng tiếng lóng, khẩu ngữ suồng sã, từ ngữ đường phố (như "bàn thờ", "cắt cổ", "dỏm", "chém giá", "ngậm đắng nuốt cay", "chậm như rùa", "giữ con tấm"...). Dùng từ ngữ trang nhã, chính xác và chuyên nghiệp.
 `;
 
     return prompt;
