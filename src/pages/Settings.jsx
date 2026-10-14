@@ -111,7 +111,7 @@ function ApiKeysSection() {
     setForm({
       name: key.name,
       provider: key.provider,
-      apiKey: key.apiKey,
+      apiKey: "",
       dailyLimit: key.dailyLimit,
       priority: key.priority,
       active: key.active,
@@ -228,7 +228,9 @@ function ApiKeysSection() {
                   </div>
                 </td>
                 <td style={{ fontFamily: "monospace", fontSize: 12 }}>
-                  {key.apiKey.slice(0, 10)}...{key.apiKey.slice(-4)}
+                  {key.apiKey?.startsWith("...") || key.apiKey === "••••"
+                    ? key.apiKey
+                    : `${(key.apiKey || "").slice(0, 10)}...${(key.apiKey || "").slice(-4)}`}
                 </td>
                 <td>{key.priority}</td>
                 <td>{key.dailyLimit}</td>
@@ -327,11 +329,11 @@ function ApiKeysSection() {
               </div>
             </div>
             <div className="form-group">
-              <label>API Key *</label>
+              <label>API Key {editingKey ? "(để trống nếu giữ nguyên key cũ)" : "*"}</label>
               <div style={{ display: "flex", gap: 8 }}>
                 <input
                   type="password"
-                  placeholder="AIza..."
+                  placeholder={editingKey ? "Để trống nếu giữ nguyên key cũ" : "AIza..."}
                   value={form.apiKey}
                   style={{ flex: 1 }}
                   onChange={(e) => {
@@ -466,7 +468,7 @@ function ApiKeysSection() {
               <button
                 className="btn btn-primary"
                 onClick={handleCreate}
-                disabled={!form.name || !form.apiKey}
+                disabled={!form.name || (!editingKey && !form.apiKey)}
               >
                 {editingKey ? "Lưu thay đổi" : "Thêm mới"}
               </button>

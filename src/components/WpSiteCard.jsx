@@ -18,8 +18,8 @@ export default function WpSiteCard({ site, onUpdate, onDelete }) {
     siteUrl: site.siteUrl || "",
     username: site.username || "",
     appPassword: "",
-    pluginApiKey: site.pluginApiKey || "",
-    webhookSecret: site.webhookSecret || "",
+    pluginApiKey: site.pluginApiKey && site.pluginApiKey !== "••••••••" ? site.pluginApiKey : "",
+    webhookSecret: site.webhookSecret && site.webhookSecret !== "••••••••" ? site.webhookSecret : "",
   });
   const [saving, setSaving] = useState(false);
   const [pluginTesting, setPluginTesting] = useState(false);
@@ -73,7 +73,7 @@ export default function WpSiteCard({ site, onUpdate, onDelete }) {
       setTestMsg(result.message || (result.success ? "✅ Kết nối thành công!" : "❌ Kết nối thất bại"));
       if (result.success) {
         setEditing(false); // collapse form on success
-        setForm((f) => ({ ...f, appPassword: "" })); // clear password field
+        setForm((f) => ({ ...f, appPassword: "", pluginApiKey: "", webhookSecret: "" })); // clear secret fields
       }
       onUpdate?.();
     } catch (e) {
@@ -265,29 +265,31 @@ export default function WpSiteCard({ site, onUpdate, onDelete }) {
             </div>
             <div style={{ marginBottom: 10 }}>
               <label style={{ display: "block", fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>
-                Plugin API Key
+                Plugin API Key {site.pluginApiKey ? "(để trống = giữ cũ)" : ""}
               </label>
               <input
                 className="input"
+                type="password"
                 value={form.pluginApiKey}
                 onChange={(e) => setForm({ ...form, pluginApiKey: e.target.value })}
-                placeholder="splseo_xxxxxxxxxxxxxxxxxxxx"
+                placeholder={site.pluginApiKey ? "•••••••• (giữ nguyên key cũ)" : "splseo_xxxxxxxxxxxxxxxxxxxx"}
                 style={{ width: "100%", fontSize: 13, fontFamily: "monospace" }}
               />
             </div>
             <div style={{ marginBottom: 10 }}>
               <label style={{ display: "block", fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>
-                Webhook Secret (tùy chọn)
+                Webhook Secret {site.webhookSecret ? "(để trống = giữ cũ)" : "(tùy chọn)"}
               </label>
               <input
                 className="input"
+                type="password"
                 value={form.webhookSecret}
                 onChange={(e) => setForm({ ...form, webhookSecret: e.target.value })}
-                placeholder="Để trống nếu chưa cài webhook"
+                placeholder={site.webhookSecret ? "•••••••• (giữ nguyên secret cũ)" : "Để trống nếu chưa cài webhook"}
                 style={{ width: "100%", fontSize: 13, fontFamily: "monospace" }}
               />
             </div>
-            {form.pluginApiKey && (
+            {(form.pluginApiKey || site.pluginApiKey) && (
               <button
                 className="btn btn-sm"
                 style={{ fontSize: 11, background: "rgba(99,102,241,0.15)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.25)" }}
