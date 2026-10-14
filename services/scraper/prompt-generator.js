@@ -87,7 +87,7 @@ ${secondaryKeywords.length > 0 ? `🔗 KEYWORD PHỤ: ${secondaryKeywords.join("
 9. Cuối bài: FAQ 5 câu (format Q&A)
 10. Gợi ý 3 bài nên internal link đến
 
-🎭 TONE: Chuyên nghiệp, chỉn chu, khách quan và đáng tin cậy chuẩn doanh nghiệp B2B. TUYỆT ĐỐI KHÔNG dùng tiếng lóng, khẩu ngữ suồng sã, từ ngữ đường phố (như "bàn thờ", "cắt cổ", "dỏm", "chém giá", "ngậm đắng nuốt cay", "chậm như rùa", "giữ con tấm"...). Dùng từ ngữ doanh nghiệp trang trọng, lập luận sắc bén bằng số liệu và giải pháp.
+🎭 TONE: Cố vấn giải pháp chiến lược cấp cao chuẩn doanh nghiệp B2B, chuyên sâu, khách quan, đáng tin cậy. TUYỆT ĐỐI KHÔNG dùng tiếng lóng, khẩu ngữ suồng sã, từ ngữ đường phố hay văn nói đời thường (như "ngậm ngùi", "mất trắng", "thợ code", "không ai nghe máy", "bàn thờ", "cắt cổ", "dỏm", "chém giá", "chậm như rùa", "giữ con tấm", "rẻ giật mình", "slide ảnh bay lượn"...). Dùng từ ngữ doanh nghiệp trang trọng, lập luận sắc bén bằng số liệu và giải pháp kỹ thuật.
 Viết câu rõ ràng, mạch lạc, dễ scan. Dùng bullet points và bảng khi phù hợp.
 `;
 
@@ -157,7 +157,7 @@ Viết câu rõ ràng, mạch lạc, dễ scan. Dùng bullet points và bảng k
 8. Title Tag + Meta Description chuẩn SEO
 9. Gợi ý 5 internal links
 
-🎭 TONE: Chuyên gia đầu ngành, văn phong doanh nghiệp cao cấp, đáng tin cậy và có kinh nghiệm thực chiến sâu sắc. TUYỆT ĐỐI KHÔNG dùng tiếng lóng, khẩu ngữ suồng sã, từ ngữ đường phố (như "bàn thờ", "cắt cổ", "dỏm", "chém giá", "ngậm đắng nuốt cay", "chậm như rùa", "giữ con tấm"...). Dùng từ ngữ trang nhã, chính xác và chuyên nghiệp.
+🎭 TONE: Cố vấn công nghệ chiến lược cấp cao, văn phong doanh nghiệp B2B chuẩn mực, đáng tin cậy và có kinh nghiệm thực chiến sâu sắc. TUYỆT ĐỐI KHÔNG dùng tiếng lóng, khẩu ngữ suồng sã, từ ngữ đường phố hay văn nói đời thường (như "ngậm ngùi", "mất trắng", "thợ code", "không ai nghe máy", "bàn thờ", "cắt cổ", "dỏm", "chém giá", "chậm như rùa", "giữ con tấm", "rẻ giật mình", "slide ảnh bay lượn"...). Dùng từ ngữ trang nhã, chính xác, lập luận bằng giải pháp kỹ thuật và số liệu chuẩn xác.
 `;
 
     return prompt;

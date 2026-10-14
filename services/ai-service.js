@@ -58,19 +58,34 @@ class AiService {
       return "";
     }
 
-    return `[QUY CHUẨN VĂN PHONG DOANH NGHIỆP - BẮT BUỘC TUÂN THỦ]
-• Văn phong: Chuẩn mực, chuyên nghiệp, chỉn chu, trang nhã, khách quan và đáng tin cậy. Dành cho doanh nghiệp B2B, chuyên gia và độc giả cao cấp.
-• Tiếng Việt: Luôn sử dụng tiếng Việt chuẩn xác, chuẩn ngữ pháp và có đầy đủ dấu.
-• ❌ TUYỆT ĐỐI KHÔNG DÙNG: Tiếng lóng, khẩu ngữ suồng sã, từ ngữ đường phố hoặc từ ngữ thiếu trang nhã trong mọi hoàn cảnh:
-  - Cấm: "tốc độ bàn thờ", "cắt cổ", "chém giá", "dỏm", "ngậm đắng nuốt cay", "chậm như rùa", "giữ con tấm", "nói bừa", "bốc phét", "vớ vẩn", "toát mồ hôi hột"...
-• ✅ TỪ NGỮ THAY THẾ CHUẨN DOANH NGHIỆP:
-  - "tốc độ bàn thờ" → thay bằng: "tốc độ vượt trội", "tốc độ tối đa", "tốc độ thần tốc"
-  - "cắt cổ", "chém giá" → thay bằng: "chi phí quá cao", "chi phí đắt đỏ", "đội giá ngoài dự kiến"
-  - "dỏm" → thay bằng: "kém chất lượng", "thiếu tiêu chuẩn"
-  - "ngậm đắng nuốt cay" → thay bằng: "gặp nhiều rủi ro", "chịu thiệt hại đáng tiếc"
-  - "chậm như rùa" → thay bằng: "tải chậm", "hiệu năng kém", "độ trễ cao"
-  - "giữ con tấm" → thay bằng: "giữ mã nguồn", "khóa quyền truy cập hệ thống"
-• Giữ vững sự tôn trọng độc giả, lập luận bằng số liệu, kỹ thuật và giải pháp thuyết phục.
+    return `[QUY CHUẨN VĂN PHONG DOANH NGHIỆP B2B - BẮT BUỘC TUÂN THỦ]
+• TƯ THẾ & VĂN PHONG:
+  - Cố vấn giải pháp công nghệ & chiến lược số cấp cao (Enterprise Consulting).
+  - Ngôn từ chuẩn mực, trang trọng, khách quan, điềm tĩnh, lập luận dựa trên số liệu kỹ thuật, tiêu chuẩn ngành và giải pháp thực tế.
+  - TUYỆT ĐỐI KHÔNG dùng văn phong kể chuyện đời thường, khẩu ngữ dân dã, giật tít câu view mạng xã hội hay lối viết cảm tính.
+
+• ❌ DANH SÁCH TỪ NGỮ ĐỜI THƯỜNG / KHẨU NGỮ BỊ CẤM TUYỆT ĐỐI:
+  - Cấm tiếng lóng / đường phố: "tốc độ bàn thờ", "cắt cổ", "chém giá", "dỏm", "ngậm đắng nuốt cay", "chậm như rùa", "giữ con tấm", "nói bừa", "bốc phét", "vớ vẩn", "toát mồ hôi hột", "rẻ giật mình"...
+  - Cấm văn nói / cảm tính: "ngậm ngùi", "mất trắng", "thợ code", "không ai nghe máy", "chữ nhảy lộn xộn", "vỡ khung", "đỏ rực", "slide ảnh bay lượn", "cài cắm mã độc ngầm", "kê giá phát sinh", "bóc tách chi phí", "móc hầu bao", "tiền mất tật mang", "được ăn cả ngã về không", "ôm hận", "đau đầu"...
+  - Cấm từ ngữ quảng cáo sáo rỗng: "cỗ máy kiếm tiền tự động", "thần dược", "bứt phá thần tốc vô đối"...
+
+• ✅ QUY TẮC THAY THẾ CHUẨN MỰC DOANH NGHIỆP:
+  - "ngậm ngùi", "mất trắng" → "buộc phải chi trả các khoản phát sinh ngoài kế hoạch", "đối mặt nguy cơ gián đoạn hoạt động và mất mát dữ liệu"
+  - "thợ code giá rẻ" → "các đơn vị cung cấp dịch vụ giá rẻ kém chất lượng", "đội ngũ kỹ thuật thiếu kinh nghiệm"
+  - "không ai nghe máy" → "thiếu cam kết chất lượng dịch vụ (SLA) và không có quy trình hỗ trợ kỹ thuật sau bàn giao"
+  - "rẻ giật mình" → "mức giá thấp bất thường so với tiêu chuẩn ngành"
+  - "chữ nhảy lộn xộn", "vỡ khung" → "sai lệch bố cục Responsive trên các thiết bị di động"
+  - "đỏ rực" → "chỉ số hiệu năng kiểm thử không đạt tiêu chuẩn kỹ thuật của Google"
+  - "slide ảnh bay lượn" → "lạm dụng các hiệu ứng hoạt họa (animation) phức tạp"
+  - "cài cắm mã độc ngầm" → "tiềm ẩn nguy cơ tồn tại mã độc và lỗ hổng bảo mật nghiêm trọng"
+  - "kê giá phát sinh" → "tính thêm phụ phí dịch vụ ngoài hợp đồng ban đầu"
+  - "tốc độ bàn thờ" → "tốc độ vượt trội", "tối ưu hóa thời gian phản hồi"
+  - "cắt cổ", "chém giá" → "chi phí quá cao", "chi phí đắt đỏ ngoài dự toán"
+  - "dỏm" → "kém chất lượng", "không đạt tiêu chuẩn"
+  - "chậm như rùa" → "tốc độ tải trang chậm", "độ trễ cao", "hiệu năng kém"
+  - "giữ con tấm" → "giữ mã nguồn", "khóa quyền truy cập hệ thống"
+
+• TIẾNG VIỆT: Luôn dùng tiếng Việt chuẩn mực ngữ pháp, đầy đủ dấu, cấu trúc câu rõ ràng, mạch lạc, dễ scan.
 [/QUY CHUẨN VĂN PHONG]\n\n`;
   }
 
