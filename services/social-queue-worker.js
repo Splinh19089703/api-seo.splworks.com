@@ -9,6 +9,8 @@
 
 const storage = require("./storage");
 const facebookService = require("./facebook-service");
+const aiService = require("./ai-service");
+const { resolveApiKeys } = require("./api-key-pool");
 
 let isRunning = false;
 let intervalId = null;
@@ -89,9 +91,24 @@ async function processSocialQueue() {
         // Build the message
         let message = item.message || "";
 
-        // If useAI and no message yet, generate from OG data
+        // If useAI and no message yet, generate from OG data via AI (fallback to template)
         if (item.useAI && !message && item.ogData) {
-          message = generateCaption(item.ogData);
+          try {
+            const settings = await storage.getUserSettings(item.userId);
+            const keys = await resolveApiKeys(item.userId);
+            const prompt = `Viết một bài đăng mạng xã hội (Facebook) ngắn gọn, hấp dẫn, chuyên nghiệp bằng tiếng Việt để chia sẻ bài viết sau:\nTiêu đề: ${item.ogData.title || ""}\nMô tả: ${item.ogData.description || ""}\nURL: ${item.url || ""}\nYêu cầu: Mở đầu thu hút, tóm tắt 2-3 ý chính ngắn gọn, kèm lời kêu gọi đọc tiếp và 3-4 hashtag phù hợp. Chỉ trả về nội dung bài đăng, không giải thích thêm.`;
+            const aiCaption = await aiService.generate(prompt, settings, keys, {
+              feature: "social-caption",
+            });
+            if (aiCaption && typeof aiCaption === "string" && aiCaption.trim()) {
+              message = aiCaption.trim();
+            }
+          } catch (aiErr) {
+            console.warn(`[Social Queue] AI caption failed for ${item.id}, using fallback:`, aiErr.message);
+          }
+          if (!message) {
+            message = generateCaption(item.ogData);
+          }
         }
 
         // If still no message, use OG title

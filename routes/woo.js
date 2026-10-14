@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const storage = require("../services/storage");
 const wpService = require("../services/wp-service");
+const aiService = require("../services/ai-service");
+const { resolveApiKeys } = require("../services/api-key-pool");
 
 /**
  * Helper: Get WP site config with plugin API key
@@ -15,6 +17,75 @@ async function getPluginSite(req) {
   if (!site.pluginApiKey) throw new Error("Site chưa kết nối qua SPLSEO Plugin. Vào Cài đặt → WP Sites để thêm Plugin API Key.");
 
   return site;
+}
+
+/**
+ * Helper: Generate WooCommerce product description via AI
+ */
+async function generateProductContent(req, { productName, attributes, category, tone, length, focusKeyword, language }) {
+  const attrText = attributes && attributes.length > 0
+    ? attributes.map(a => `- ${a.name}: ${Array.isArray(a.options) ? a.options.join(", ") : a.options}`).join("\n")
+    : "Không có thuộc tính cụ thể";
+
+  const toneMap = {
+    professional: "chuyên nghiệp, đáng tin cậy",
+    friendly: "thân thiện, gần gũi",
+    sales: "thuyết phục, kêu gọi hành động",
+    technical: "kỹ thuật, chi tiết",
+  };
+  const toneDesc = toneMap[tone] || toneMap.professional;
+  const wordCount = length === "short" ? "100-150" : length === "long" ? "400-600" : "200-300";
+
+  const prompt = `Viết mô tả sản phẩm WooCommerce cho sản phẩm "${productName}".
+
+Danh mục: ${category || "Chung"}
+Thuộc tính sản phẩm:
+${attrText}
+
+${focusKeyword ? `Focus keyword SEO: "${focusKeyword}" — phải xuất hiện tự nhiên trong mô tả.` : ""}
+
+YÊU CẦU:
+- Ngôn ngữ: ${language || "Tiếng Việt"}
+- Giọng điệu: ${toneDesc}
+- Độ dài: ${wordCount} từ
+- Sử dụng HTML headings (h3, h4), danh sách (ul/li), bold cho các đặc điểm quan trọng
+- Mở đầu bằng 1-2 câu giới thiệu hấp dẫn
+- Liệt kê ưu điểm nổi bật
+- Kết thúc bằng lời kêu gọi hành động (CTA)
+- KHÔNG nhắc "sản phẩm này" quá nhiều, dùng tên sản phẩm tự nhiên
+
+Trả về JSON:
+{
+  "description": "HTML mô tả đầy đủ",
+  "short_description": "Mô tả ngắn 1-2 câu (plain text)",
+  "seo_title": "SEO title (max 60 ký tự)",
+  "seo_description": "Meta description (max 160 ký tự)",
+  "focus_keyword": "Focus keyword gợi ý"
+}`;
+
+  const settings = await storage.getUserSettings(req.userId);
+  const keys = await resolveApiKeys(req.userId, req.license);
+  const raw = await aiService.generate(prompt, settings, keys, { feature: "woo-description" });
+
+  let parsed = {};
+  if (raw && typeof raw === "string") {
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        parsed = JSON.parse(jsonMatch[0]);
+      } catch {}
+    }
+  } else if (raw && typeof raw === "object") {
+    parsed = raw;
+  }
+
+  return {
+    description: parsed.description || (typeof raw === "string" ? raw : ""),
+    short_description: parsed.short_description || "",
+    seo_title: parsed.seo_title || productName,
+    seo_description: parsed.seo_description || "",
+    focus_keyword: parsed.focus_keyword || focusKeyword || productName,
+  };
 }
 
 // ===========================
@@ -91,57 +162,13 @@ router.get("/product-stats", async (req, res) => {
  */
 router.post("/generate-description", async (req, res) => {
   try {
-    const { productName, attributes, category, tone, length, focusKeyword, language } = req.body;
+    const { productName } = req.body;
 
     if (!productName) {
       return res.status(400).json({ error: "productName là bắt buộc" });
     }
 
-    // Build AI prompt
-    const attrText = attributes && attributes.length > 0
-      ? attributes.map(a => `- ${a.name}: ${Array.isArray(a.options) ? a.options.join(", ") : a.options}`).join("\n")
-      : "Không có thuộc tính cụ thể";
-
-    const toneMap = {
-      professional: "chuyên nghiệp, đáng tin cậy",
-      friendly: "thân thiện, gần gũi",
-      sales: "thuyết phục, kêu gọi hành động",
-      technical: "kỹ thuật, chi tiết",
-    };
-    const toneDesc = toneMap[tone] || toneMap.professional;
-
-    const wordCount = length === "short" ? "100-150" : length === "long" ? "400-600" : "200-300";
-
-    const prompt = `Viết mô tả sản phẩm WooCommerce cho sản phẩm "${productName}".
-
-Danh mục: ${category || "Chung"}
-Thuộc tính sản phẩm:
-${attrText}
-
-${focusKeyword ? `Focus keyword SEO: "${focusKeyword}" — phải xuất hiện tự nhiên trong mô tả.` : ""}
-
-YÊU CẦU:
-- Ngôn ngữ: ${language || "Tiếng Việt"}
-- Giọng điệu: ${toneDesc}
-- Độ dài: ${wordCount} từ
-- Sử dụng HTML headings (h3, h4), danh sách (ul/li), bold cho các đặc điểm quan trọng
-- Mở đầu bằng 1-2 câu giới thiệu hấp dẫn
-- Liệt kê ưu điểm nổi bật
-- Kết thúc bằng lời kêu gọi hành động (CTA)
-- KHÔNG nhắc "sản phẩm này" quá nhiều, dùng tên sản phẩm tự nhiên
-
-Trả về JSON:
-{
-  "description": "HTML mô tả đầy đủ",
-  "short_description": "Mô tả ngắn 1-2 câu (plain text)",
-  "seo_title": "SEO title (max 60 ký tự)",
-  "seo_description": "Meta description (max 160 ký tự)",
-  "focus_keyword": "Focus keyword gợi ý"
-}`;
-
-    // Use AI service
-    const aiService = require("../services/ai-service");
-    const result = await aiService.generateJSON(prompt, "gemini");
+    const result = await generateProductContent(req, req.body);
 
     res.json({
       success: true,
@@ -171,30 +198,17 @@ router.post("/bulk-generate", async (req, res) => {
     const results = [];
     for (const pid of productIds) {
       try {
-        // Get product data
         const product = await wpService.getProduct(site, pid);
-        
-        // Generate description via AI (reuse single endpoint logic)
-        const genResp = await new Promise((resolve, reject) => {
-          const mockReq = {
-            body: {
-              productName: product.name,
-              attributes: product.attributes,
-              category: product.categories?.[0] || "",
-              tone: tone || "professional",
-              length: length || "medium",
-              language: language || "Tiếng Việt",
-            },
-          };
-          const mockRes = {
-            json: (data) => resolve(data),
-            status: () => ({ json: (data) => reject(new Error(data.error)) }),
-          };
-          // Direct AI call instead
-          resolve({ success: true, productId: pid, name: product.name, status: "queued" });
+        const generated = await generateProductContent(req, {
+          productName: product.name,
+          attributes: product.attributes,
+          category: product.categories?.[0] || "",
+          tone: tone || "professional",
+          length: length || "medium",
+          language: language || "Tiếng Việt",
         });
 
-        results.push({ productId: pid, name: product.name, success: true });
+        results.push({ productId: pid, name: product.name, success: true, ...generated });
       } catch (err) {
         results.push({ productId: pid, success: false, error: err.message });
       }

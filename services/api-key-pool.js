@@ -1,4 +1,5 @@
 const storage = require("./storage");
+const { getCreditUsage } = require("../middleware/ai-credit-tracker");
 
 function activeOnly(keys) {
   return (keys || []).filter((key) => key && key.active !== false);
@@ -15,6 +16,14 @@ function isSharedKey(key, sharedOwnerIds) {
   return key.shared === true || key.scope === "shared" || sharedOwnerIds.includes(key.userId);
 }
 
+function tagSharedKeys(keys, userId) {
+  return (keys || []).map((k) => ({
+    ...k,
+    _isSharedPool: true,
+    _forUserId: userId || null,
+  }));
+}
+
 /**
  * Resolve API keys for a user with tiered shared pool support.
  * 
@@ -27,12 +36,28 @@ function isSharedKey(key, sharedOwnerIds) {
  * @param {object|null} license — license object with features/plan (optional, for pool tiering)
  */
 async function resolveApiKeys(userId, license = null) {
-  // 1. User's own keys first (BYOK)
+  // 1. User's own keys first (BYOK — no credit deduction)
   const userKeys = activeOnly(await storage.getAllForUser("api-keys", userId));
   if (userKeys.length > 0) return userKeys;
 
   // 2. Shared pool — disabled via env
   if (process.env.ENABLE_SHARED_API_KEYS === "false") return [];
+
+  // Enforce monthly AI credit limit when using shared pool
+  if (userId && userId !== "dev-user" && process.env.DEV_SKIP_AUTH !== "true") {
+    try {
+      const creditUsage = await getCreditUsage(userId, license);
+      if (creditUsage && creditUsage.remaining <= 0) {
+        const err = new Error(
+          `Đã hết AI credits tháng này (${creditUsage.used}/${creditUsage.limit}). Vui lòng nâng cấp gói hoặc thêm API Key cá nhân trong Cài đặt.`
+        );
+        err.code = "AI_CREDITS_EXCEEDED";
+        throw err;
+      }
+    } catch (creditErr) {
+      if (creditErr.code === "AI_CREDITS_EXCEEDED") throw creditErr;
+    }
+  }
 
   const sharedOwnerIds = getSharedPoolOwnerIds();
   const allKeys = await storage.getAll("api-keys");
@@ -48,17 +73,17 @@ async function resolveApiKeys(userId, license = null) {
   }
 
   if (sharedKeys.length === 0) {
-    const systemOmniKey = process.env.OMNIROUTER_API_KEY || "sk-6d1a4767eafa77f3-b7b7b6-b54c243d";
+    const systemOmniKey = process.env.OMNIROUTER_API_KEY;
     if (systemOmniKey) {
       console.log(`[API-Key-Pool] ⚡ Dùng fallback key OmniRouter hệ thống cho user ${userId}`);
-      return [{
+      return tagSharedKeys([{
         id: "system_omnirouter_key",
         name: "OmniRouter System",
         provider: "omnirouter",
         apiKey: systemOmniKey,
         active: true,
         priority: 1
-      }];
+      }], userId);
     }
     return [];
   }
@@ -68,7 +93,7 @@ async function resolveApiKeys(userId, license = null) {
 
   if (hasPriority) {
     // Pro+/Agency+: access ALL shared keys including priority (priority < 10)
-    return sharedKeys;
+    return tagSharedKeys(sharedKeys, userId);
   }
 
   // Trial/Basic: only standard shared keys (priority >= 10)
@@ -79,10 +104,10 @@ async function resolveApiKeys(userId, license = null) {
   // (don't lock users out if admin hasn't set priorities)
   if (standardKeys.length === 0) {
     console.warn("[API-Key-Pool] Không có standard shared keys, dùng tất cả shared keys cho trial/basic user.");
-    return sharedKeys;
+    return tagSharedKeys(sharedKeys, userId);
   }
 
-  return standardKeys;
+  return tagSharedKeys(standardKeys, userId);
 }
 
 module.exports = { resolveApiKeys };

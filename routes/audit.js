@@ -4,6 +4,7 @@ const storage = require("../services/storage");
 const auditService = require("../services/audit-service");
 const { featureGate } = require("../middleware/license-guard");
 const { resolveApiKeys } = require("../services/api-key-pool");
+const { isSafeExternalUrl } = require("../services/url-scraper");
 
 // --- License: Gate entire audit module behind seoAudit feature ---
 router.use(featureGate("seoAudit"));
@@ -66,6 +67,9 @@ router.post("/", async (req, res) => {
   try {
     const { domain, maxPages } = req.body;
     if (!domain) return res.status(400).json({ error: "Domain is required" });
+    if (!isSafeExternalUrl(domain)) {
+      return res.status(400).json({ error: "Domain không hợp lệ hoặc bị chặn vì lý do bảo mật (SSRF protection)" });
+    }
 
     // Check audit limit
     const allAudits = await storage.getAllForUser("audits", req.userId);
@@ -398,6 +402,9 @@ router.post("/fetch-article", async (req, res) => {
   try {
     const { url, siteId } = req.body;
     if (!url) return res.status(400).json({ error: "url is required" });
+    if (!isSafeExternalUrl(url)) {
+      return res.status(400).json({ error: "URL không hợp lệ hoặc bị chặn vì lý do bảo mật (SSRF protection)" });
+    }
 
     let articleData = null;
 
@@ -939,7 +946,7 @@ router.put("/rewrite-history/:id/status", async (req, res) => {
     if (status === "draft") { updateData.pushedAt = null; updateData.scheduledAt = null; }
 
     const existing = await storage.getByIdForUser("rewrite-history", req.params.id, req.userId);
-    if (!existing) return res.status(404).json({ error: "KhÃ´ng tÃ¬m tháº¥y báº£n rewrite" });
+    if (!existing) return res.status(404).json({ error: "Không tìm thấy bản rewrite" });
     const updated = await storage.update("rewrite-history", req.params.id, updateData);
     if (!updated) return res.status(404).json({ error: "Không tìm thấy bản rewrite" });
     res.json(updated);
@@ -954,7 +961,7 @@ router.put("/rewrite-history/:id/status", async (req, res) => {
 router.delete("/rewrite-history/:id", async (req, res) => {
   try {
     const existing = await storage.getByIdForUser("rewrite-history", req.params.id, req.userId);
-    if (!existing) return res.status(404).json({ error: "KhÃ´ng tÃ¬m tháº¥y" });
+    if (!existing) return res.status(404).json({ error: "Không tìm thấy" });
     const deleted = await storage.delete("rewrite-history", req.params.id);
     if (!deleted) return res.status(404).json({ error: "Không tìm thấy" });
     res.json({ success: true });

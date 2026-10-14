@@ -59,7 +59,7 @@ async function publishQueueItem(item) {
     const project = article?.projectId
       ? await storage.getByIdForUser("projects", article.projectId, userId)
       : null;
-    if (article && !project) throw new Error(`Article "${sourceId}" khÃ´ng tÃ¬m tháº¥y`);
+    if (article && !project) throw new Error(`Article "${sourceId}" không tìm thấy`);
     if (!article) throw new Error(`Article "${sourceId}" không tìm thấy`);
     const pipeline = article.pipeline || {};
     const outline = pipeline.outline?.data || {};
@@ -200,13 +200,13 @@ router.post("/", async (req, res) => {
     const site = await storage.getByIdForUser("wp-sites", siteId, req.userId);
     if (sourceType === "draft") {
       const draft = await storage.getByIdForUser("standalone-drafts", sourceId, req.userId);
-      if (!draft) return res.status(404).json({ error: "Draft khÃ´ng tÃ¬m tháº¥y" });
+      if (!draft) return res.status(404).json({ error: "Draft không tìm thấy" });
     } else if (sourceType === "project-article") {
       const article = await storage.getByIdForUser("articles", sourceId, req.userId);
       const project = article?.projectId
         ? await storage.getByIdForUser("projects", article.projectId, req.userId)
         : null;
-      if (!article || !project) return res.status(404).json({ error: "Article khÃ´ng tÃ¬m tháº¥y" });
+      if (!article || !project) return res.status(404).json({ error: "Article không tìm thấy" });
     }
     if (!site) return res.status(404).json({ error: "WP site không tìm thấy" });
 
@@ -269,7 +269,7 @@ router.put("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     const item = await storage.getByIdForUser("publish-queue", req.params.id, req.userId);
-    if (!item) return res.status(404).json({ error: "Queue item khÃ´ng tÃ¬m tháº¥y" });
+    if (!item) return res.status(404).json({ error: "Queue item không tìm thấy" });
     await storage.delete("publish-queue", req.params.id);
     res.json({ success: true });
   } catch (e) {

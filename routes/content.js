@@ -8,6 +8,7 @@ const { validateArticle } = require("../services/content-validator");
 const { resolveApiKeys } = require("../services/api-key-pool");
 const pipelineQueue = require("../services/pipeline-queue");
 const { checkAiCredits, consumeCredits } = require("../middleware/ai-credit-tracker");
+const { reportArticleCreated } = require("../middleware/license-middleware");
 
 // Reuse existing modules (co-located in services/scraper/)
 const Crawler = require("../services/scraper/crawler");
@@ -21,7 +22,7 @@ const bulkCrawler = new BulkCrawler();
 const promptGen = new PromptGenerator();
 
 // ===== AI KEYWORD CLUSTERING (Standalone) =====
-router.post("/analyze-keywords", async (req, res) => {
+router.post("/analyze-keywords", checkAiCredits("text"), async (req, res) => {
   try {
     const { keywords } = req.body; // string, one keyword per line
     const kwList = (keywords || "").split("\n").map(k => k.trim()).filter(Boolean);
@@ -855,6 +856,7 @@ router.post("/drafts", async (req, res) => {
       updatedAt: new Date().toISOString(),
     };
     const created = await storage.createForUser("standalone-drafts", draft, req.userId);
+    reportArticleCreated(req, res).catch(() => {});
     res.json(created);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -867,9 +869,10 @@ router.put("/drafts/:id", async (req, res) => {
     const existing = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
     if (!existing) return res.status(404).json({ error: "Draft not found" });
     
+    const { id: _id, userId: _userId, ...safeBody } = req.body || {};
     const updated = {
       ...existing,
-      ...req.body,
+      ...safeBody,
       updatedAt: new Date().toISOString(),
     };
     await storage.update("standalone-drafts", req.params.id, updated);
@@ -959,7 +962,7 @@ router.post("/drafts/:id/to-project", async (req, res) => {
       wpPostId: draft.pipeline?.publish?.wpPostId || null,
       wpUrl: draft.pipeline?.publish?.wpUrl || null,
       tokenUsage: draft.tokenUsage || { research: 0, outline: 0, content: 0, total: 0 },
-    });
+    }, req.userId);
 
     // Update project article count
     const allArticles = await storage.getAllForUser("articles", req.userId);

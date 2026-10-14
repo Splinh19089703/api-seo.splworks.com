@@ -27,16 +27,33 @@ router.post("/wp", async (req, res) => {
 
     // Verify webhook signature
     const sites = await storage.getAll("wp-sites");
-    const site = sites.find(
-      (s) => s.siteUrl && siteUrl.includes(new URL(s.siteUrl).hostname)
-    );
+    const site = sites.find((s) => {
+      if (!s.siteUrl) return false;
+      try {
+        return siteUrl.includes(new URL(s.siteUrl).hostname);
+      } catch {
+        return false;
+      }
+    });
 
-    if (site && site.webhookSecret && signature) {
+    if (!site) {
+      return res.status(404).json({ error: "Unregistered WP site" });
+    }
+
+    if (site.webhookSecret) {
+      if (!signature || typeof signature !== "string") {
+        return res.status(401).json({ error: "Missing webhook signature" });
+      }
       const expected = crypto
         .createHmac("sha256", site.webhookSecret)
         .update(body)
         .digest("hex");
-      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+      const sigBuf = Buffer.from(signature, "utf8");
+      const expectedBuf = Buffer.from(expected, "utf8");
+      if (
+        sigBuf.length !== expectedBuf.length ||
+        !crypto.timingSafeEqual(sigBuf, expectedBuf)
+      ) {
         return res.status(403).json({ error: "Invalid signature" });
       }
     }

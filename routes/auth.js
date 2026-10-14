@@ -128,8 +128,8 @@ router.get("/me", async (req, res) => {
     res.json(result);
   } catch (error) {
     if (error.status === 401) {
-      // Token expired, clear it
-      await licenseClient.clearToken();
+      // Token expired, clear only this user's token cache
+      await licenseClient.clearToken(getBearerToken(req));
       return res
         .status(401)
         .json({ error: "Phiên đăng nhập hết hạn", requireAuth: true });
@@ -145,7 +145,7 @@ router.get("/me", async (req, res) => {
  */
 router.post("/logout", async (req, res) => {
   try {
-    await licenseClient.clearToken();
+    await licenseClient.clearToken(getBearerToken(req));
     res.json({ success: true, message: "Đã đăng xuất" });
   } catch (error) {
     res.status(500).json({ error: "Lỗi đăng xuất" });

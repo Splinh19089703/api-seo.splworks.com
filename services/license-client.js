@@ -97,15 +97,26 @@ function request(method, path, body = null, token = null) {
 }
 
 /**
+ * Clear cached license entries for a specific token (or all if no token provided)
+ */
+function clearCacheForToken(token) {
+  if (!token) return;
+  const prefix = `${token}:`;
+  for (const key of _licenseCacheMap.keys()) {
+    if (key.startsWith(prefix)) {
+      _licenseCacheMap.delete(key);
+    }
+  }
+}
+
+/**
  * Login via license server
  */
 async function login(email, password) {
   const result = await request("POST", "/auth/login", { email, password });
-  // Save token locally
-  await saveToken(result.token);
-  // Auth responses do not include the full /license/validate payload
-  // (notably top-level userId). Keep validation cache separate.
-  _licenseCacheMap.clear();
+  if (result?.token) {
+    clearCacheForToken(result.token);
+  }
   return result;
 }
 
@@ -116,10 +127,9 @@ async function googleLogin(idToken, referralCode) {
   const body = { idToken };
   if (referralCode) body.referralCode = referralCode;
   const result = await request("POST", "/auth/google", body);
-  await saveToken(result.token);
-  // Auth responses do not include the full /license/validate payload
-  // (notably top-level userId). Keep validation cache separate.
-  _licenseCacheMap.clear();
+  if (result?.token) {
+    clearCacheForToken(result.token);
+  }
   return result;
 }
 
@@ -130,10 +140,9 @@ async function register(email, password, name, referredBy) {
   const body = { email, password, name };
   if (referredBy) body.referredBy = referredBy;
   const result = await request("POST", "/auth/register", body);
-  await saveToken(result.token);
-  // Auth responses do not include the full /license/validate payload
-  // (notably top-level userId). Keep validation cache separate.
-  _licenseCacheMap.clear();
+  if (result?.token) {
+    clearCacheForToken(result.token);
+  }
   return result;
 }
 
@@ -143,8 +152,8 @@ async function register(email, password, name, referredBy) {
  * @param {boolean} forceRefresh - clear cache before fetching
  */
 async function getMe(token, forceRefresh = false) {
-  if (forceRefresh) {
-    _licenseCacheMap.clear();
+  if (forceRefresh && token) {
+    clearCacheForToken(token);
   }
   return request("GET", "/auth/me", null, token);
 }
@@ -193,8 +202,8 @@ async function validateLicense(token, fingerprint, productSlug = "splseo") {
  */
 async function reportUsage(token, data) {
   const result = await request("POST", "/license/report-usage", data, token);
-  // Invalidate cache so next validate gets fresh data
-  _licenseCacheMap.clear();
+  // Invalidate cache for this user's token so next validate gets fresh data
+  clearCacheForToken(token);
   return result;
 }
 
@@ -252,38 +261,28 @@ async function getMyOrders(token) {
   return request("GET", "/order/my-orders", null, token);
 }
 
-// ===== Token persistence (in SQLite settings) =====
+// ===== Token helpers (multi-tenant safe: no global _authToken fallback) =====
 
-async function saveToken(token) {
-  try {
-    const settings = await storage.getSettings();
-    settings._authToken = token;
-    await storage.saveSettings(settings);
-  } catch (err) {
-    console.warn("[license-client] Could not persist token to storage:", err.message);
-  }
+async function saveToken(_token) {
+  // No-op in multi-tenant mode to prevent cross-user token leakage
 }
 
 async function getToken() {
-  try {
-    const settings = await storage.getSettings();
-    return settings._authToken || null;
-  } catch {
-    return null;
+  return null;
+}
+
+async function clearToken(token = null) {
+  if (token) {
+    clearCacheForToken(token);
   }
 }
 
-async function clearToken() {
-  try {
-    const settings = await storage.getSettings();
-    delete settings._authToken;
-    await storage.saveSettings(settings);
-  } catch {}
-  _licenseCacheMap.clear();
-}
-
-function clearCache() {
-  _licenseCacheMap.clear();
+function clearCache(token = null) {
+  if (token) {
+    clearCacheForToken(token);
+  } else {
+    _licenseCacheMap.clear();
+  }
 }
 
 module.exports = {

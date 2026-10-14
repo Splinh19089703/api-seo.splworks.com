@@ -37,7 +37,7 @@ async function getLicenseData(req) {
     };
   }
 
-  const token = getAuthToken(req) || await licenseClient.getToken();
+  const token = getAuthToken(req);
   if (!token) return null;
 
   try {
@@ -152,7 +152,7 @@ async function reportArticleCreated(req, res, next) {
   try {
     if (process.env.DEV_SKIP_AUTH === "true") return next();
 
-    const token = getAuthToken(req) || await licenseClient.getToken();
+    const token = getAuthToken(req);
     if (token) {
       // Fire and forget — don't block the response
       licenseClient.reportUsage(token, { articlesCreated: 1 }).catch(e => {
@@ -162,7 +162,7 @@ async function reportArticleCreated(req, res, next) {
   } catch (e) {
     console.warn("[LicenseMiddleware] reportArticleCreated error:", e);
   }
-  next();
+  if (typeof next === "function") next();
 }
 
 /**

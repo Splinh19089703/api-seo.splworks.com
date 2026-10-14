@@ -214,18 +214,21 @@ router.get("/users/:userId/credits", async (req, res) => {
     let failedArticles = 0;
 
     for (const a of allArticles) {
-      totalWords += parseInt(a.wordCount) || 0;
-      if (a.thumbnail) totalImages++;
+      totalWords += parseInt(a.wordCount || a.pipeline?.content?.data?.wordCount) || 0;
+      if (a.thumbnail || a.thumbnailUrl || a.pipeline?.thumbnail?.url) totalImages++;
       if (Array.isArray(a.images)) totalImages += a.images.length;
-      if (a.status === "published" || a.wpPostId) publishedArticles++;
+      else if (Array.isArray(a.sectionImages)) totalImages += a.sectionImages.length;
+      else if (Array.isArray(a.pipeline?.sections?.images)) totalImages += a.pipeline.sections.images.length;
+      if (a.status === "published" || a.wpPostId || a.pipeline?.publish?.wpPostId) publishedArticles++;
       if (a.status === "error" || a.error) failedArticles++;
     }
 
     for (const d of drafts) {
-      totalWords += parseInt(d.wordCount) || 0;
-      if (d.thumbnail) totalImages++;
+      totalWords += parseInt(d.wordCount || d.pipeline?.content?.wordCount) || 0;
+      if (d.thumbnail || d.pipeline?.thumbnail?.url) totalImages++;
       if (Array.isArray(d.images)) totalImages += d.images.length;
-      if (d.status === "published") publishedArticles++;
+      else if (Array.isArray(d.pipeline?.sections?.images)) totalImages += d.pipeline.sections.images.length;
+      if (d.status === "published" || d.pipeline?.publish?.wpPostId) publishedArticles++;
       if (d.status === "error" || d.error) failedArticles++;
     }
 
@@ -338,8 +341,8 @@ router.get("/users/:userId/projects/:projectId/articles", async (req, res) => {
  */
 router.get("/users/:userId/articles/:articleId", async (req, res) => {
   try {
-    const { articleId } = req.params;
-    const article = await storage.getById("articles", articleId);
+    const { userId, articleId } = req.params;
+    const article = await storage.getByIdForUser("articles", articleId, userId);
     if (!article) {
       return res.status(404).json({ error: "Không tìm thấy bài viết" });
     }
@@ -392,8 +395,8 @@ router.get("/users/:userId/drafts", async (req, res) => {
  */
 router.get("/users/:userId/drafts/:draftId", async (req, res) => {
   try {
-    const { draftId } = req.params;
-    const draft = await storage.getById("standalone-drafts", draftId);
+    const { userId, draftId } = req.params;
+    const draft = await storage.getByIdForUser("standalone-drafts", draftId, userId);
     if (!draft) {
       return res.status(404).json({ error: "Không tìm thấy draft" });
     }
@@ -443,8 +446,8 @@ router.get("/users/:userId/audits", async (req, res) => {
  */
 router.get("/users/:userId/audits/:auditId", async (req, res) => {
   try {
-    const { auditId } = req.params;
-    const audit = await storage.getById("audits", auditId);
+    const { userId, auditId } = req.params;
+    const audit = await storage.getByIdForUser("audits", auditId, userId);
     if (!audit) {
       return res.status(404).json({ error: "Không tìm thấy báo cáo audit" });
     }

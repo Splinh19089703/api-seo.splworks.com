@@ -1306,7 +1306,18 @@ router.post("/:projectId/kwplans/:planId/generate-titles", async (req, res) => {
 // PUT update plan (add cluster, edit keyword, etc.)
 router.put("/:projectId/kwplans/:planId", async (req, res) => {
   try {
-    const plan = await storage.update("kwplans", req.params.planId, req.body);
+    const existing = await getProjectOwnedRecordOr404(
+      "kwplans",
+      req.params.planId,
+      req.params.projectId,
+      res,
+      "Not found",
+      req.userId,
+    );
+    if (!existing) return;
+
+    const { id: _id, userId: _userId, projectId: _projectId, ...safeBody } = req.body || {};
+    const plan = await storage.update("kwplans", req.params.planId, safeBody);
     if (!plan) return res.status(404).json({ error: "Not found" });
     res.json(plan);
   } catch (e) {
@@ -1317,6 +1328,16 @@ router.put("/:projectId/kwplans/:planId", async (req, res) => {
 // DELETE plan
 router.delete("/:projectId/kwplans/:planId", async (req, res) => {
   try {
+    const existing = await getProjectOwnedRecordOr404(
+      "kwplans",
+      req.params.planId,
+      req.params.projectId,
+      res,
+      "Not found",
+      req.userId,
+    );
+    if (!existing) return;
+
     await storage.delete("kwplans", req.params.planId);
 
     const project = await storage.getByIdForUser("projects", req.params.projectId, req.userId);
@@ -1355,6 +1376,8 @@ router.get("/:projectId/articles/:articleId", async (req, res) => {
       req.params.articleId,
       req.params.projectId,
       res,
+      "Not found",
+      req.userId,
     );
     if (!article) return;
     res.json(article);
@@ -1405,7 +1428,7 @@ router.post("/:projectId/articles", async (req, res) => {
         searchIntent: kw.searchIntent || "informational",
         contentType: "blog",
         tokenUsage: { research: 0, outline: 0, content: 0, total: 0 },
-      });
+      }, req.userId);
       created.push(article);
     }
     // Update project article count
@@ -1414,6 +1437,19 @@ router.post("/:projectId/articles", async (req, res) => {
       (a) => a.projectId === req.params.projectId,
     ).length;
     await storage.update("projects", req.params.projectId, { articles: count });
+
+    // Report usage to License Server (BUG-08)
+    if (created.length > 0 && process.env.DEV_SKIP_AUTH !== "true") {
+      const authHeader = req.headers.authorization;
+      const token = authHeader && authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : null;
+      if (token) {
+        const licenseClient = require("../services/license-client");
+        licenseClient.reportUsage(token, { articlesCreated: created.length }).catch((err) => {
+          console.warn("[ProjectContent] Report usage failed:", err.message || err);
+        });
+      }
+    }
+
     res.status(201).json(created);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1540,7 +1576,7 @@ router.post("/:projectId/articles/import-wp", async (req, res) => {
         searchIntent: "informational",
         contentType: "blog",
         tokenUsage: { research: 0, outline: 0, content: 0, total: 0 },
-      });
+      }, req.userId);
       created.push(article);
     }
 
@@ -1567,13 +1603,16 @@ router.put("/:projectId/articles/:articleId", async (req, res) => {
       req.params.articleId,
       req.params.projectId,
       res,
+      "Not found",
+      req.userId,
     );
     if (!existing) return;
 
+    const { id: _id, userId: _userId, projectId: _projectId, ...safeBody } = req.body || {};
     const article = await storage.update(
       "articles",
       req.params.articleId,
-      req.body,
+      safeBody,
     );
     if (!article) return res.status(404).json({ error: "Not found" });
     res.json(article);
@@ -2699,6 +2738,16 @@ router.post("/:projectId/videos", async (req, res) => {
 // DELETE video
 router.delete("/:projectId/videos/:videoId", async (req, res) => {
   try {
+    const existing = await getProjectOwnedRecordOr404(
+      "videos",
+      req.params.videoId,
+      req.params.projectId,
+      res,
+      "Video not found",
+      req.userId,
+    );
+    if (!existing) return;
+
     await storage.delete("videos", req.params.videoId);
     const allVideos = await storage.getAllForUser("videos", req.userId);
     const count = allVideos.filter(
@@ -2739,6 +2788,16 @@ router.post("/:projectId/knowledgebases", async (req, res) => {
 
 router.delete("/:projectId/knowledgebases/:kbId", async (req, res) => {
   try {
+    const existing = await getProjectOwnedRecordOr404(
+      "knowledgebases",
+      req.params.kbId,
+      req.params.projectId,
+      res,
+      "Knowledge base not found",
+      req.userId,
+    );
+    if (!existing) return;
+
     await storage.delete("knowledgebases", req.params.kbId);
     res.json({ success: true });
   } catch (e) {

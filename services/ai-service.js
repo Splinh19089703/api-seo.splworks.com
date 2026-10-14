@@ -184,6 +184,10 @@ class AiService {
               console.log(`[AI-Cache] ⚡ Cache HIT cho ${provider} (${model})`);
               this.lastUsedProvider = provider;
               this.lastUsedModel = model;
+              if (options && typeof options === "object") {
+                options.usedProvider = provider;
+                options.usedModel = model;
+              }
               return cachedRecord.response;
             }
           }
@@ -211,9 +215,17 @@ class AiService {
             options.res,
           );
 
-          // Track last used provider+model for UI display (A4)
+          // Track last used provider+model for UI display (A4) + request-scoped options (BUG-13)
           this.lastUsedProvider = provider;
           this.lastUsedModel = model;
+          if (options && typeof options === "object") {
+            options.usedProvider = provider;
+            options.usedModel = model;
+          }
+          if (key._isSharedPool && (key._forUserId || options?.userId)) {
+            const { consumeCredits } = require("../middleware/ai-credit-tracker");
+            consumeCredits(key._forUserId || options.userId, "text").catch(() => {});
+          }
           console.log(`[AI] ✅ Text generated via ${provider} (${model})`);
 
           // 2. Lưu kết quả vào Cache nếu thành công
@@ -588,7 +600,15 @@ class AiService {
 
   async _callOmniRouter(apiKey, prompt, config, stream, res) {
     const model = config.textModel || process.env.OMNIROUTER_MODEL || "spl";
-    const endpoint = config.endpoint || process.env.OMNIROUTER_ENDPOINT || "http://139.99.89.215:20128/v1/chat/completions";
+    const endpoint =
+      config.endpoint ||
+      process.env.OMNIROUTER_ENDPOINT ||
+      (process.env.OMNIROUTER_BASE_URL
+        ? `${process.env.OMNIROUTER_BASE_URL.replace(/\/$/, "")}/v1/chat/completions`
+        : "");
+    if (!endpoint) {
+      throw new Error("Chưa cấu hình OMNIROUTER_ENDPOINT hoặc OMNIROUTER_BASE_URL trong biến môi trường");
+    }
 
     if (stream && res) {
       const response = await axios.post(

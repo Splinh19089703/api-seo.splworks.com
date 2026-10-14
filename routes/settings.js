@@ -60,8 +60,11 @@ router.get("/api-keys", async (req, res) => {
       if (cooldownUntil && cooldownUntil > Date.now()) {
         cooldownSecondsLeft = Math.ceil((cooldownUntil - Date.now()) / 1000);
       }
+      const rawKey = String(k.apiKey || "");
+      const maskedKey = rawKey.length > 4 ? `...${rawKey.slice(-4)}` : "••••";
       return {
         ...k,
+        apiKey: maskedKey,
         cooldownSecondsLeft,
       };
     });
@@ -118,16 +121,27 @@ router.put("/api-keys/:id", async (req, res) => {
   try {
     const existing = await storage.getByIdForUser("api-keys", req.params.id, req.userId);
     if (!existing) return res.status(404).json({ error: "Key not found" });
-    const updated = await storage.update("api-keys", req.params.id, {
+    const updates = {
       name: req.body.name,
       provider: req.body.provider,
-      apiKey: req.body.apiKey,
       dailyLimit: req.body.dailyLimit,
       priority: req.body.priority,
       active: req.body.active,
-    });
+    };
+    if (
+      req.body.apiKey &&
+      typeof req.body.apiKey === "string" &&
+      !req.body.apiKey.startsWith("...") &&
+      req.body.apiKey !== "••••"
+    ) {
+      updates.apiKey = req.body.apiKey.trim();
+    }
+    const updated = await storage.update("api-keys", req.params.id, updates);
     if (!updated) return res.status(404).json({ error: "Key not found" });
-    res.json(updated);
+    res.json({
+      ...updated,
+      apiKey: updated.apiKey ? `...${String(updated.apiKey).slice(-4)}` : "••••",
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -192,7 +206,13 @@ router.post("/api-keys/test", async (req, res) => {
 router.get("/wp-sites", async (req, res) => {
   try {
     const sites = await storage.getAllForUser("wp-sites", req.userId);
-    res.json(sites);
+    const maskedSites = sites.map((s) => ({
+      ...s,
+      appPassword: s.appPassword ? "••••••••" : "",
+      pluginApiKey: s.pluginApiKey ? "••••••••" : null,
+      webhookSecret: s.webhookSecret ? "••••••••" : null,
+    }));
+    res.json(maskedSites);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -254,11 +274,16 @@ router.put("/wp-sites/:id", async (req, res) => {
       name: req.body.name ?? existing.name,
       siteUrl: req.body.siteUrl ?? existing.siteUrl,
       username: req.body.username ?? existing.username,
-      // Only update password if a new one is provided
-      ...(req.body.appPassword ? { appPassword: req.body.appPassword } : {}),
-      // Plugin API fields (Sprint 14)
-      ...(req.body.pluginApiKey !== undefined ? { pluginApiKey: req.body.pluginApiKey } : {}),
-      ...(req.body.webhookSecret !== undefined ? { webhookSecret: req.body.webhookSecret } : {}),
+      // Only update secrets if a new non-masked value is provided
+      ...(req.body.appPassword && req.body.appPassword !== "••••••••"
+        ? { appPassword: req.body.appPassword }
+        : {}),
+      ...(req.body.pluginApiKey && req.body.pluginApiKey !== "••••••••"
+        ? { pluginApiKey: req.body.pluginApiKey, connectionMode: "plugin" }
+        : {}),
+      ...(req.body.webhookSecret && req.body.webhookSecret !== "••••••••"
+        ? { webhookSecret: req.body.webhookSecret }
+        : {}),
       // Reset test status when credentials change
       lastTestOk: null,
       lastTestAt: null,
@@ -266,7 +291,12 @@ router.put("/wp-sites/:id", async (req, res) => {
     };
 
     const updated = await storage.update("wp-sites", req.params.id, updates);
-    res.json(updated);
+    res.json({
+      ...updated,
+      appPassword: updated.appPassword ? "••••••••" : "",
+      pluginApiKey: updated.pluginApiKey ? "••••••••" : null,
+      webhookSecret: updated.webhookSecret ? "••••••••" : null,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

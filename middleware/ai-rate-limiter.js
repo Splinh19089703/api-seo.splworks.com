@@ -39,6 +39,8 @@ setInterval(() => {
  * Must be used AFTER licenseGuard
  */
 function aiRateLimiter(req, res, next) {
+  // Only rate-limit mutating requests (POST/PUT/DELETE/PATCH), never GET/HEAD/OPTIONS
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return next();
   // DEV mode bypass
   if (process.env.DEV_SKIP_AUTH === "true") return next();
   // Admin bypass
@@ -48,10 +50,6 @@ function aiRateLimiter(req, res, next) {
   if (!userId) return next();
 
   const plan = req.license?.plan || "trial";
-
-  // Trial bypass — trial đã bị giới hạn bởi article limit (10 bài) và AI credits (100)
-  // Không cần rate limit per-request, để user trải nghiệm mượt mà → chuyển đổi mua
-  if (plan === "trial") return next();
   const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.trial;
   const now = Date.now();
 

@@ -181,12 +181,21 @@ class Storage {
   migrateOrphanedRecords(targetUserId) {
     if (!targetUserId) throw new Error("targetUserId is required");
 
+    const systemCollections = [
+      "response-cache",
+      "gsc-cache",
+      "gsc-oauth-states",
+      "ai-credits",
+    ];
+    const placeholders = systemCollections.map(() => "?").join(", ");
+
     const rows = this.db
       .prepare(
         `SELECT id, collection, data FROM collections 
-         WHERE json_extract(data, '$.userId') IS NULL`
+         WHERE collection NOT IN (${placeholders})
+           AND json_extract(data, '$.userId') IS NULL`
       )
-      .all();
+      .all(...systemCollections);
 
     const updateStmt = this.db.prepare(
       `UPDATE collections SET data = ?, updated_at = ? WHERE id = ?`
@@ -195,7 +204,7 @@ class Storage {
     const now = new Date().toISOString();
     const summary = {};
 
-        const runMigration = this.db.transaction(() => {
+    const runMigration = this.db.transaction(() => {
       for (const row of rows) {
         const data = JSON.parse(row.data);
         data.userId = targetUserId;
@@ -452,6 +461,9 @@ class Storage {
     const params = [collection];
 
     for (const [key, value] of Object.entries(filter)) {
+      if (!/^[a-zA-Z0-9_.]+$/.test(key)) {
+        throw new Error(`Invalid filter key: ${key}`);
+      }
       query += ` AND json_extract(data, '$.${key}') = ?`;
       params.push(value);
     }
@@ -497,6 +509,9 @@ class Storage {
     let query = `SELECT COUNT(*) as c FROM collections WHERE collection = ?`;
     const params = [collection];
     for (const [key, value] of Object.entries(filter)) {
+      if (!/^[a-zA-Z0-9_.]+$/.test(key)) {
+        throw new Error(`Invalid filter key: ${key}`);
+      }
       query += ` AND json_extract(data, '$.${key}') = ?`;
       params.push(value);
     }
