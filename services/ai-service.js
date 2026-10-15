@@ -89,6 +89,29 @@ class AiService {
 [/QUY CHUẨN VĂN PHONG]\n\n`;
   }
 
+  /**
+   * Anti-AI footprint rules, adapted from Wikipedia:Signs of AI writing.
+   * Full rulebook: ROADMAP/projects/webtong/ANTI_AI_WRITING_RULES.md
+   */
+  _buildAntiAiFootprintContext(prompt = "", options = {}) {
+    if (options.skipTone || options.skipAntiAi) return "";
+    if (/image prompt/i.test(prompt.substring(0, 100))) {
+      return "";
+    }
+
+    return `[QUY TẮC CHỐNG DẤU VẾT AI - ÁP DỤNG KHI VIẾT VĂN BẢN CHO NGƯỜI ĐỌC]
+• CỤ THỂ THAY VÌ KHOA TRƯƠNG: thay tính từ bằng số đo, tên công nghệ, thời gian, chi phí. Nếu bỏ tính từ mà câu không còn thông tin thì xóa câu.
+• KHÔNG BỊA: số liệu, nghiên cứu, bằng sáng chế, chuyên gia, giải thưởng. Không có nguồn trong dữ liệu đầu vào thì không viết con số. Không dùng "theo các chuyên gia", "nhiều nghiên cứu cho thấy".
+• HẠN CHẾ TỐI ĐA (mỗi cụm ≤ 1 lần/bài): "trong bối cảnh", "thời đại số", "đóng vai trò quan trọng/then chốt", "là minh chứng", "đánh dấu bước ngoặt", "toàn diện", "vượt trội", "đột phá", "mạnh mẽ", "nâng tầm", "hành trình", "chìa khóa", "bí quyết", "khám phá", "sở hữu", "mang đến trải nghiệm", "Ngoài ra,", "Bên cạnh đó,", "Hơn nữa,", "Điều quan trọng cần lưu ý", "Hãy cùng tìm hiểu".
+• CẤU TRÚC CẤM LẠM DỤNG: "không chỉ... mà còn...", "không phải X mà là Y" (≤ 1 lần/bài); đuôi câu "qua đó/từ đó/góp phần nâng cao..." (≤ 1 lần/đoạn); bộ ba tính từ "nhanh, hiệu quả và tiết kiệm"; khối "Mặc dù... vẫn đối mặt thách thức... hứa hẹn"; đoạn kết "Tóm lại/Nhìn chung" lặp ý.
+• NGÔN NGỮ TỰ NHIÊN: dùng "là", "có", "dùng" thay vì "đóng vai trò là", "sở hữu", "vận dụng". Gọi một đối tượng bằng một tên, không xoay vòng từ đồng nghĩa. Trộn câu ngắn (3-6 từ) với câu dài. Mở bài bằng tình huống hoặc câu trả lời trực tiếp, không mở bằng định nghĩa.
+• TRÌNH BÀY: heading viết hoa kiểu câu (chỉ viết hoa chữ đầu và tên riêng, VD "Cách tối ưu tốc độ WordPress"); không emoji trong heading/gạch đầu dòng; in đậm ≤ 1 cụm/đoạn; ≤ 2 khối danh sách dạng "**Tiêu đề:** mô tả", ý viết được thành đoạn văn thì viết đoạn văn; gạch dài "—" ≤ 3/bài; bảng chỉ dùng khi có số liệu so sánh thật; không khung ASCII; không chèn "---" giữa mọi phần.
+• KHÔNG XUẤT VĂN BẢN CHATBOT: không "Dưới đây là...", "Hy vọng bài viết hữu ích", "Nếu bạn cần thêm...", không chỗ trống mẫu [Tên công ty], không câu rào đón "thông tin chưa được công bố rộng rãi".
+• ƯU TIÊN ĐƯA VÀO: dữ liệu thật từ đầu vào (số liệu nội bộ, case study, cấu hình, lỗi đã gặp), nhận định có điều kiện và có chủ kiến ("Nếu site dưới 20 trang thì...").
+• VỀ VĂN PHONG DOANH NGHIỆP: "trang trọng" nghĩa là chính xác và có căn cứ, không phải dùng nhiều tính từ lớn. Khi quy tắc thay thế ở trên gợi ý tính từ (VD "tốc độ vượt trội"), ưu tiên thay bằng số đo cụ thể nếu có.
+[/QUY TẮC CHỐNG DẤU VẾT AI]\n\n`;
+  }
+
   _generateCacheKey(provider, model, prompt, options = {}) {
     const data = JSON.stringify({
       provider,
@@ -174,8 +197,12 @@ class AiService {
     const enableCache = settings.aiProvider?.enableCache !== false;
     const cacheTtl = settings.aiProvider?.cacheTtl || 86400; // mặc định 24h
 
-    // Inject current date context and corporate tone standards
-    const enrichedPrompt = this._buildDateContext() + this._buildCorporateToneContext(prompt, options) + prompt;
+    // Inject current date context, corporate tone standards and anti-AI footprint rules
+    const enrichedPrompt =
+      this._buildDateContext() +
+      this._buildCorporateToneContext(prompt, options) +
+      this._buildAntiAiFootprintContext(prompt, options) +
+      prompt;
 
     // Smart Routing: use textRouting chain (A2)
     const providers = this._getTextProviderChain(settings, apiKeys);
