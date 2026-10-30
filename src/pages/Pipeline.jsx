@@ -1170,11 +1170,11 @@ function DraftViewer({ draft, onBack }) {
             {thumb.prompt && <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12, fontStyle: "italic" }}>{"📝"} Prompt: {thumb.prompt.substring(0, 200)}{thumb.prompt.length > 200 ? "..." : ""}</div>}
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={() => runStep("thumbnail", () => api.generateDraftThumbnail(d.id))} disabled={processingStep}>{"🔄"} Tạo lại</button>
-              <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={() => setShowImageReplacer({ type: "thumbnail" })}>{"📤"} Thay ảnh</button>
+              <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={() => setShowImageReplacer({ type: "thumbnail" })}>{"🔍"} Ảnh Google / Upload</button>
               <a href={thumbUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primary btn-sm" style={{ flex: 1, textAlign: "center" }}>{"🔗"} Mở ảnh gốc</a>
             </div>
             {showImageReplacer?.type === "thumbnail" && (
-              <ImageReplacer label="Thay thumbnail" onClose={() => setShowImageReplacer(null)}
+              <ImageReplacer label="Thay thumbnail" defaultQuery={d.keyword || outline.title || ""} onClose={() => setShowImageReplacer(null)}
                 onReplace={async (data) => { await api.setDraftThumbnailUrl(d.id, data); const updated = await api.getDraft(d.id); setD(updated); }} />
             )}
           </div>
@@ -1186,10 +1186,10 @@ function DraftViewer({ draft, onBack }) {
             {thumb?.error && <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>{thumb.error}</p>}
             <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
               <button className="btn btn-primary btn-sm" onClick={() => runStep("thumbnail", () => api.generateDraftThumbnail(d.id))} disabled={processingStep}>{"🔄"} Thử lại</button>
-              <button className="btn btn-secondary btn-sm" onClick={() => setShowImageReplacer({ type: "thumbnail" })}>{"📤"} Upload ảnh</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowImageReplacer({ type: "thumbnail" })}>{"🔍"} Chọn ảnh Google / Upload</button>
             </div>
             {showImageReplacer?.type === "thumbnail" && (
-              <ImageReplacer label="Upload thumbnail" onClose={() => setShowImageReplacer(null)}
+              <ImageReplacer label="Chọn thumbnail" defaultQuery={d.keyword || outline.title || ""} onClose={() => setShowImageReplacer(null)}
                 onReplace={async (data) => { await api.setDraftThumbnailUrl(d.id, data); const updated = await api.getDraft(d.id); setD(updated); }} />
             )}
           </div>
@@ -1198,15 +1198,15 @@ function DraftViewer({ draft, onBack }) {
           <div className="card" style={{ textAlign: "center", padding: "60px 40px" }}>
             <div style={{ fontSize: 48, marginBottom: 12, opacity: 0.5 }}>{"🖼️"}</div>
             <h3 style={{ margin: "0 0 8px", fontWeight: 600 }}>Chưa có thumbnail</h3>
-            <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>AI sẽ tạo ảnh đại diện cho bài viết.</p>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>AI hoặc Google Images sẽ tự động lấy ảnh đại diện chuẩn chủ đề cho bài viết.</p>
             <ErrorAlert stepKey="thumbnail" />
             <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-              <button className="btn btn-primary btn-sm" style={{ background: "var(--accent-green)" }} disabled={!content.html || processingStep} onClick={() => runStep("thumbnail", () => api.generateDraftThumbnail(d.id))}>{"✨"} Tạo thumbnail</button>
-              <button className="btn btn-secondary btn-sm" onClick={() => setShowImageReplacer({ type: "thumbnail" })}>{"📤"} Upload ảnh</button>
+              <button className="btn btn-primary btn-sm" style={{ background: "var(--accent-green)" }} disabled={!content.html || processingStep} onClick={() => runStep("thumbnail", () => api.generateDraftThumbnail(d.id))}>{"✨"} Tạo thumbnail tự động</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowImageReplacer({ type: "thumbnail" })}>{"🔍"} Tìm ảnh Google / Upload</button>
               <button className="btn btn-secondary btn-sm" onClick={async () => { await api.updateDraft(d.id, { pipeline: { ...p, thumbnail: { status: "done", url: null, prompt: "Skipped" } } }); const updated = await api.getDraft(d.id); setD(updated); }}>{"⏭️"} Bỏ qua</button>
             </div>
             {showImageReplacer?.type === "thumbnail" && (
-              <ImageReplacer label="Upload thumbnail" onClose={() => setShowImageReplacer(null)}
+              <ImageReplacer label="Chọn thumbnail" defaultQuery={d.keyword || outline.title || ""} onClose={() => setShowImageReplacer(null)}
                 onReplace={async (data) => { await api.setDraftThumbnailUrl(d.id, data); const updated = await api.getDraft(d.id); setD(updated); }} />
             )}
           </div>
@@ -1258,7 +1258,7 @@ function DraftViewer({ draft, onBack }) {
                     <div style={{ fontSize: 12, fontWeight: 600 }}>{img.sectionHeading || `Section ${idx + 1}`}</div>
                     <button className="btn btn-secondary btn-sm" style={{ padding: "2px 8px", fontSize: 10 }}
                       onClick={() => setShowImageReplacer({ type: "section", index: idx })}>
-                      {"📤"} Thay ảnh
+                      {"🔍"} Đổi ảnh
                     </button>
                   </div>
                   {img.status === "done" && img.url ? (
@@ -1271,7 +1271,7 @@ function DraftViewer({ draft, onBack }) {
                       {"❌"} Thất bại {img.error && <div style={{ marginTop: 4, fontSize: 10 }}>{img.error}</div>}
                       <button className="btn btn-secondary btn-sm" style={{ marginTop: 8 }}
                         onClick={() => setShowImageReplacer({ type: "section", index: idx })}>
-                        {"📤"} Upload ảnh thay thế
+                        {"🔍"} Tìm ảnh Google / Upload
                       </button>
                     </div>
                   )}
@@ -1280,7 +1280,9 @@ function DraftViewer({ draft, onBack }) {
             </div>
 
             {showImageReplacer?.type === "section" && (
-              <ImageReplacer label={`Thay ảnh: ${sectionImages[showImageReplacer.index]?.sectionHeading || "Section"}`}
+              <ImageReplacer
+                label={`Thay ảnh: ${sectionImages[showImageReplacer.index]?.sectionHeading || "Section"}`}
+                defaultQuery={`${d.keyword || ""} ${sectionImages[showImageReplacer.index]?.sectionHeading || ""}`.trim()}
                 onClose={() => setShowImageReplacer(null)}
                 onReplace={async (data) => {
                   await api.setDraftSectionImage(d.id, showImageReplacer.index, data);

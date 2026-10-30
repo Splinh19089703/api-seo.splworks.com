@@ -531,7 +531,8 @@ function AiProviderSection() {
     { id: "openrouter", label: "🔀 OpenRouter", desc: "300+ models", badge: "🟢" },
   ];
   const imageRoutingModes = [
-    { id: "auto-best", label: "🎨 Auto-Best", desc: "Imagen → GPT Image → OpenRouter → Free", badge: "🏆" },
+    { id: "auto-best", label: "🎨 Auto-Best", desc: "Imagen → GPT Image → Google Images", badge: "🏆" },
+    { id: "google-search", label: "🔍 Google Images", desc: "Lấy ảnh thực tế chuẩn chủ đề từ Google (không tốn token AI)", badge: "🟢 FREE" },
     { id: "gemini", label: "💎 Gemini", desc: "Imagen / Gemini Native", badge: "🟢 FREE" },
     { id: "openai", label: "🟢 OpenAI", desc: "GPT Image / DALL-E", badge: "💰" },
     { id: "openrouter", label: "🔀 OpenRouter", desc: "Via OpenRouter API", badge: "🟢" },

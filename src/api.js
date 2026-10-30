@@ -186,6 +186,12 @@ export const api = {
     fetchApi(`/projects/${pid}/articles/${aid}/section-images`, {
       method: "POST",
     }),
+  setArticleThumbnailUrl: (pid, aid, data) =>
+    fetchApi(`/projects/${pid}/articles/${aid}/thumbnail-url`, { method: "PUT", body: data }),
+  setArticleSectionImage: (pid, aid, index, data) =>
+    fetchApi(`/projects/${pid}/articles/${aid}/section-image/${index}`, { method: "PUT", body: data }),
+  searchImages: (query, limit = 16) =>
+    fetchApi("/content/search-images", { method: "POST", body: { query, limit } }),
   generateResearch: (pid, aid) =>
     fetchApi(`/projects/${pid}/articles/${aid}/research`, { method: "POST" }),
   generateOutline: (pid, aid) =>
