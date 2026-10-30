@@ -372,7 +372,11 @@ class AiService {
    * "auto-best" → prioritize quality (Gemini Imagen → OpenAI → OpenRouter)
    */
   _getImageProviderChain(settings, apiKeys) {
-    const routing = settings.aiProvider?.imageRouting;
+    const routing = settings?.aiProvider?.imageRouting;
+
+    if (routing === "google-search") {
+      return ["google-search"];
+    }
 
     if (routing === "auto-best") {
       const chain = [];
@@ -388,6 +392,275 @@ class AiService {
 
     // Default: try all in quality order
     return ["gemini", "openai", "openrouter"];
+  }
+
+  /**
+   * Clean Vietnamese/English search query for Google/Bing Images search
+   */
+  _cleanImageSearchQuery(rawQuery) {
+    if (!rawQuery) return "";
+    return String(rawQuery)
+      .replace(/<[^>]*>/g, " ")
+      .replace(/^(?:phần|chương|bước|mục)\s*\d+[:.\s-]*/i, "")
+      .replace(/^(?:[IVXLC]+|\d+(?:\.\d+)*)[:.)\s-]+/i, "")
+      .replace(/["'“”‘’`#*~_[\](){}]/g, " ")
+      .replace(/\b(?:là gì|như thế nào|tại sao|vì sao|hướng dẫn chi tiết|toàn tập|từ a đến z|từ a-z|mới nhất|chi tiết nhất)\b/gi, " ")
+      .replace(/\b(?:professional|photo|illustration|representing|modern|clean|style|bright|studio|lighting|detailed|no text|no watermark|high quality|3d render|blog|section|thumbnail)\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .substring(0, 120);
+  }
+
+  /**
+   * Check whether a candidate URL is suitable (no watermarked stock sites, no icons/SVGs, not excluded)
+   */
+  _isAcceptableImageCandidate(url, excludeUrls = null) {
+    if (!url || typeof url !== "string" || !/^https?:\/\//i.test(url)) return false;
+    if (excludeUrls) {
+      if (excludeUrls instanceof Set && excludeUrls.has(url)) return false;
+      if (Array.isArray(excludeUrls) && excludeUrls.includes(url)) return false;
+    }
+    const lower = url.toLowerCase();
+    if (/\.(svg|gif|ico)(\?|$)/i.test(lower)) return false;
+    if (/(?:logo|icon|avatar|sprite|badge|banner-ad|placeholder|loading|favicon|emoji)/i.test(lower)) return false;
+
+    const blockedDomains = [
+      "shutterstock.com", "istockphoto.com", "gettyimages.com", "alamy.com",
+      "123rf.com", "depositphotos.com", "dreamstime.com", "bigstockphoto.com",
+      "vecteezy.com", "pngtree.com", "lovepik.com", "pikbest.com", "freepik.com",
+      "canstockphoto.com", "envato.com", "graphicriver.net", "ftcdn.net",
+      "lookaside.fbsbx.com", "tiktokcdn.com"
+    ];
+    if (blockedDomains.some(d => lower.includes(d))) return false;
+    return true;
+  }
+
+  /**
+   * Search real topic-relevant images from Google Images, Bing Images, Serper, and Stock APIs
+   * @param {string} query - Topic / keyword / heading query
+   * @param {object} options - { apiKeys, excludeUrls, limit }
+   * @returns {Promise<Array<{url: string, thumbUrl: string, title: string, source: string, width: number, height: number}>>}
+   */
+  async searchRealImages(query, options = {}) {
+    const cleanQuery = this._cleanImageSearchQuery(query);
+    if (!cleanQuery) return [];
+
+    const apiKeys = options.apiKeys || [];
+    const excludeUrls = options.excludeUrls || null;
+    const limit = options.limit || 20;
+    const results = [];
+    const seenUrls = new Set();
+
+    const addCandidate = (item) => {
+      if (!item || !item.url) return;
+      const normalizedUrl = item.url.trim();
+      if (seenUrls.has(normalizedUrl)) return;
+      if (!this._isAcceptableImageCandidate(normalizedUrl, excludeUrls)) return;
+      seenUrls.add(normalizedUrl);
+      results.push({
+        url: normalizedUrl,
+        thumbUrl: item.thumbUrl || normalizedUrl,
+        title: item.title || cleanQuery,
+        source: item.source || "Web",
+        width: item.width || 800,
+        height: item.height || 500,
+      });
+    };
+
+    const browserHeaders = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+      "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
+    };
+
+    // 1. Serper Google Images API (if configured)
+    const serperKey = apiKeys.find(k => k.provider === "serper" && k.active)?.apiKey || process.env.SERPER_API_KEY;
+    if (serperKey) {
+      try {
+        const resp = await axios.post(
+          "https://google.serper.dev/images",
+          { q: cleanQuery, gl: "vn", hl: "vi", num: 15 },
+          { headers: { "X-API-KEY": serperKey, "Content-Type": "application/json" }, timeout: 10000 }
+        );
+        for (const img of resp.data?.images || []) {
+          addCandidate({
+            url: img.imageUrl,
+            thumbUrl: img.thumbnailUrl || img.imageUrl,
+            title: img.title || cleanQuery,
+            source: img.domain || "Google Images",
+            width: img.imageWidth || 800,
+            height: img.imageHeight || 500,
+          });
+        }
+      } catch (e) {
+        console.warn("[AI-ImageSearch] Serper Images error:", e.message);
+      }
+    }
+
+    // 2. Google Images Direct Search
+    if (results.length < limit) {
+      try {
+        const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(cleanQuery)}&tbm=isch&hl=vi&gl=vn&safe=active`;
+        const resp = await axios.get(googleUrl, { headers: browserHeaders, timeout: 10000 });
+        const html = String(resp.data || "")
+          .replace(/\\u003d/g, "=")
+          .replace(/\\u0026/g, "&")
+          .replace(/\\u003f/g, "?")
+          .replace(/\\\//g, "/");
+
+        // Match ["https://...", height, width] in Google AF_initDataCallback blocks
+        const regex = /\["(https?:\/\/[^"\s\\]+)",\s*(\d{3,4}),\s*(\d{3,4})\]/g;
+        let match;
+        while ((match = regex.exec(html)) !== null) {
+          const imgUrl = match[1];
+          const h = parseInt(match[2], 10);
+          const w = parseInt(match[3], 10);
+          if (w < 400 || h < 250) continue;
+          if (/gstatic\.com|google\.com|ggpht\.com|googleusercontent\.com\/a\//i.test(imgUrl)) continue;
+          let domain = "Google Images";
+          try { domain = new URL(imgUrl).hostname.replace(/^www\./, ""); } catch {}
+          addCandidate({
+            url: imgUrl,
+            thumbUrl: imgUrl,
+            title: cleanQuery,
+            source: domain,
+            width: w,
+            height: h,
+          });
+          if (results.length >= limit) break;
+        }
+      } catch (e) {
+        console.warn("[AI-ImageSearch] Google Direct error:", e.message);
+      }
+    }
+
+    // 3. Bing Images Async Search (provides both original murl and reliable turl proxy)
+    if (results.length < limit) {
+      try {
+        const bingUrl = `https://www.bing.com/images/async?q=${encodeURIComponent(cleanQuery)}&first=0&count=25&adlt=strict&mkt=vi-VN`;
+        const resp = await axios.get(bingUrl, { headers: browserHeaders, timeout: 10000 });
+        const html = String(resp.data || "");
+        const mRegex = /\bm="([^"]+)"/g;
+        let match;
+        while ((match = mRegex.exec(html)) !== null) {
+          try {
+            const decoded = match[1]
+              .replace(/&quot;/g, '"')
+              .replace(/&amp;/g, "&")
+              .replace(/&#39;/g, "'")
+              .replace(/&lt;/g, "<")
+              .replace(/&gt;/g, ">");
+            const meta = JSON.parse(decoded);
+            if (meta?.murl) {
+              let domain = "Bing Images";
+              try { domain = new URL(meta.murl).hostname.replace(/^www\./, ""); } catch {}
+              addCandidate({
+                url: meta.murl,
+                thumbUrl: meta.turl || meta.murl,
+                title: meta.t || cleanQuery,
+                source: domain,
+                width: 800,
+                height: 500,
+              });
+            }
+          } catch {}
+          if (results.length >= limit) break;
+        }
+      } catch (e) {
+        console.warn("[AI-ImageSearch] Bing Async error:", e.message);
+      }
+    }
+
+    // 4. Stock APIs (Unsplash / Pexels / Pixabay) if keys are available
+    const unsplashKey = apiKeys.find(k => k.provider === "unsplash" && k.active);
+    if (unsplashKey && results.length < limit) {
+      try {
+        const resp = await axios.get("https://api.unsplash.com/search/photos", {
+          params: { query: cleanQuery, per_page: 6, orientation: "landscape", client_id: unsplashKey.apiKey },
+          timeout: 8000,
+        });
+        for (const item of resp.data?.results || []) {
+          if (item?.urls?.regular) {
+            addCandidate({
+              url: item.urls.regular,
+              thumbUrl: item.urls.small || item.urls.regular,
+              title: item.description || item.alt_description || cleanQuery,
+              source: "Unsplash",
+              width: item.width || 1200,
+              height: item.height || 630,
+            });
+          }
+        }
+      } catch {}
+    }
+
+    const pexelsKey = apiKeys.find(k => k.provider === "pexels" && k.active);
+    if (pexelsKey && results.length < limit) {
+      try {
+        const resp = await axios.get("https://api.pexels.com/v1/search", {
+          headers: { Authorization: pexelsKey.apiKey },
+          params: { query: cleanQuery, per_page: 6, orientation: "landscape" },
+          timeout: 8000,
+        });
+        for (const item of resp.data?.photos || []) {
+          if (item?.src?.large) {
+            addCandidate({
+              url: item.src.large,
+              thumbUrl: item.src.medium || item.src.large,
+              title: item.alt || cleanQuery,
+              source: "Pexels",
+              width: item.width || 1200,
+              height: item.height || 630,
+            });
+          }
+        }
+      } catch {}
+    }
+
+    return results.slice(0, limit);
+  }
+
+  /**
+   * Download an external image URL, validate it is a real image (>= 8KB), and store locally via imageStore
+   */
+  async downloadAndStoreImage(url, prefix = "google", fallbackThumbUrl = null) {
+    const tryFetch = async (targetUrl) => {
+      let referer = "https://www.google.com/";
+      try {
+        referer = new URL(targetUrl).origin + "/";
+      } catch {}
+      const resp = await axios.get(targetUrl, {
+        timeout: 15000,
+        responseType: "arraybuffer",
+        maxContentLength: 8 * 1024 * 1024,
+        maxRedirects: 5,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+          "Referer": referer,
+        },
+      });
+      const contentType = (resp.headers["content-type"] || "image/jpeg").split(";")[0].trim().toLowerCase();
+      if (!contentType.startsWith("image/") || contentType.includes("svg")) {
+        throw new Error(`Invalid content-type: ${contentType}`);
+      }
+      const buffer = Buffer.from(resp.data);
+      if (buffer.byteLength < 8192) {
+        throw new Error(`Image too small (${buffer.byteLength} bytes)`);
+      }
+      const base64DataUri = `data:${contentType};base64,${buffer.toString("base64")}`;
+      return imageStore.normalizeImageUrl(base64DataUri, prefix);
+    };
+
+    try {
+      return await tryFetch(url);
+    } catch (err1) {
+      if (fallbackThumbUrl && fallbackThumbUrl !== url) {
+        console.log(`[AI-Image] Primary URL failed (${err1.message}), trying fallback thumbUrl...`);
+        return await tryFetch(fallbackThumbUrl);
+      }
+      throw err1;
+    }
   }
 
   /**
@@ -1048,9 +1321,52 @@ class AiService {
       }
     }
 
-    // ===== 4. Photo Stock APIs — Unsplash → Pexels → Pixabay =====
-    const cleanPrompt = prompt.replace(/[^\w\s,.-]/g, "").substring(0, 200).trim();
-    const searchKeywords = cleanPrompt.split(/[,.\s]+/).filter(w => w.length > 3).slice(0, 3).join(" ");
+    // ===== 4. Real Topic Images — Google Images / Bing Images / Serper =====
+    // Prioritizes Vietnamese topic/section queries (options.searchQuery -> options.fallbackQuery -> prompt)
+    const recordUsedUrl = (u) => {
+      if (!u || !options.excludeUrls) return;
+      if (options.excludeUrls instanceof Set) options.excludeUrls.add(u);
+      else if (Array.isArray(options.excludeUrls) && !options.excludeUrls.includes(u)) options.excludeUrls.push(u);
+    };
+
+    const rawQueries = [
+      options.searchQuery,
+      options.fallbackQuery,
+      this._cleanImageSearchQuery(prompt),
+    ].filter(Boolean);
+
+    const uniqueQueries = [...new Set(rawQueries.map(q => this._cleanImageSearchQuery(q)).filter(Boolean))];
+
+    for (const q of uniqueQueries) {
+      try {
+        console.log(`[AI-Image] 🔍 Searching Google/Bing Images for topic: "${q}"...`);
+        const candidates = await this.searchRealImages(q, {
+          apiKeys,
+          excludeUrls: options.excludeUrls,
+          limit: 12,
+        });
+
+        for (const cand of candidates.slice(0, 6)) {
+          try {
+            const savedLocalUrl = await this.downloadAndStoreImage(cand.url, "google", cand.thumbUrl);
+            recordUsedUrl(cand.url);
+            if (cand.thumbUrl) recordUsedUrl(cand.thumbUrl);
+            console.log(`[AI-Image] ✅ Google/Web Image success (${cand.source}) → ${savedLocalUrl}`);
+            return savedLocalUrl;
+          } catch (dlErr) {
+            // Try next candidate if hotlink-blocked or invalid
+            continue;
+          }
+        }
+      } catch (searchErr) {
+        errors.push(`GoogleSearch("${q}"): ${searchErr.message}`);
+        console.warn(`[AI-Image] Search failed for "${q}":`, searchErr.message);
+      }
+    }
+
+    // ===== 5. Photo Stock APIs — Unsplash → Pexels → Pixabay =====
+    const cleanPrompt = (options.searchQuery || options.fallbackQuery || prompt).replace(/[^\p{L}\p{N}\s,.-]/gu, "").substring(0, 200).trim();
+    const searchKeywords = cleanPrompt.split(/[,.\s]+/).filter(w => w.length > 2).slice(0, 5).join(" ");
 
     // 4a. Unsplash
     const unsplashKey = apiKeys.find(k => k.provider === "unsplash" && k.active);

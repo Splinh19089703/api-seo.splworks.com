@@ -56,9 +56,31 @@ class WpService {
    */
   async publish(config, article) {
     const cleanPass = (config.appPassword || '').replace(/\s+/g, '');
+
+    // Automatically upload any local /api/uploads/images/... inside article HTML to WordPress Media Library
+    let processedContent = article.content || "";
+    const localImgRegex = /src=["']((?:https?:\/\/[^"']+)?\/api\/uploads\/images\/[^"']+)["']/gi;
+    const localUrls = new Set();
+    let match;
+    while ((match = localImgRegex.exec(processedContent)) !== null) {
+      localUrls.add(match[1]);
+    }
+
+    for (const rawSrc of localUrls) {
+      try {
+        const relativePath = rawSrc.replace(/^https?:\/\/[^/]+/i, "");
+        const uploaded = await this.uploadImage(config, relativePath, article.title || "");
+        if (uploaded?.url) {
+          processedContent = processedContent.split(rawSrc).join(uploaded.url);
+        }
+      } catch (e) {
+        console.warn(`[WP-Publish] Failed to upload section image ${rawSrc} to WP media:`, e.message);
+      }
+    }
+
     const postData = {
       title: article.title,
-      content: article.content,
+      content: processedContent,
       status: article.status || "draft",
       categories: article.categories || [],
       tags: article.tags || [],
@@ -134,6 +156,7 @@ class WpService {
       const imageResponse = await axios.get(imageUrl, {
         responseType: "arraybuffer",
         timeout: 30000,
+        headers: this._headers(),
       });
       buffer = Buffer.from(imageResponse.data);
       const ctHeader = imageResponse.headers['content-type'] || 'image/jpeg';
@@ -142,13 +165,14 @@ class WpService {
       filename = `ai-image-${Date.now()}.${ext}`;
     }
 
+    const cleanPass = (config.appPassword || '').replace(/\s+/g, '');
     const url = await this._resolveWpUrl(config.siteUrl, "/wp/v2/media");
     const response = await axios.post(url, buffer, {
-      auth: { username: config.username, password: config.appPassword },
-      headers: {
+      auth: { username: config.username, password: cleanPass },
+      headers: this._headers({
         "Content-Type": mimeType,
         "Content-Disposition": `attachment; filename="${filename}"`,
-      },
+      }),
       timeout: 60000,
     });
 

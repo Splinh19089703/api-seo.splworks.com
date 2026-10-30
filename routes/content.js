@@ -4,7 +4,76 @@ const path = require("path");
 const storage = require("../services/storage");
 const aiService = require("../services/ai-service");
 const wpService = require("../services/wp-service");
+const imageStore = require("../services/image-store");
 const { validateArticle } = require("../services/content-validator");
+
+/**
+ * Helper: Insert generated section images (<figure>) into article HTML after matching H2 headings.
+ * Idempotent: removes old .article-section-image figures and [IMG: ...] placeholders before inserting.
+ */
+function insertSectionImagesIntoHtml(rawHtml, sectionImages = [], keyword = "") {
+  if (!rawHtml || typeof rawHtml !== "string") {
+    return { html: rawHtml || "", insertedCount: 0 };
+  }
+
+  // Strip leftover [IMG: ...] placeholders and previously auto-inserted section figures
+  let html = rawHtml
+    .replace(/<p[^>]*>\s*\[IMG:[^\]]*\]\s*<\/p>/gi, "")
+    .replace(/\[IMG:[^\]]*\]/gi, "")
+    .replace(/\n?<figure class="article-section-image"[\s\S]*?<\/figure>\n?/gi, "");
+
+  const validImages = (sectionImages || []).filter(i => i && i.status === "done" && i.url);
+  if (validImages.length === 0) {
+    return { html, insertedCount: 0 };
+  }
+
+  let insertedCount = 0;
+  const usedH2Matches = new Set();
+
+  for (const img of validImages) {
+    const heading = (img.sectionHeading || "").trim();
+    const cleanHeading = heading
+      .replace(/^(?:phần|chương|bước|mục)\s*\d+[:.\s-]*/i, "")
+      .replace(/^(?:[IVXLC]+|\d+(?:\.\d+)*)[:.)\s-]+/i, "")
+      .trim();
+
+    let matchedH2 = null;
+
+    if (cleanHeading) {
+      const escapedHeading = cleanHeading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const h2Regex = new RegExp(`(<h2[^>]*>[\\s\\S]*?${escapedHeading}[\\s\\S]*?<\\/h2>)`, "i");
+      const m = html.match(h2Regex);
+      if (m && !usedH2Matches.has(m[0])) {
+        matchedH2 = m[0];
+      }
+    }
+
+    // Fallback: pick the next H2 in the article that hasn't received an image yet
+    if (!matchedH2) {
+      const allH2s = html.match(/<h2[^>]*>[\s\S]*?<\/h2>/gi) || [];
+      for (const h2 of allH2s) {
+        if (!usedH2Matches.has(h2)) {
+          matchedH2 = h2;
+          break;
+        }
+      }
+    }
+
+    if (matchedH2) {
+      usedH2Matches.add(matchedH2);
+      const plainH2Text = matchedH2.replace(/<[^>]*>/g, "").trim();
+      const displayCaption = heading || plainH2Text;
+      const altText = keyword ? `${displayCaption} - ${keyword}` : displayCaption;
+
+      const figureHtml = `\n<figure class="article-section-image" style="margin: 24px 0; text-align: center;">\n  <img src="${img.url}" alt="${altText.replace(/"/g, "&quot;")}" loading="lazy" title="${displayCaption.replace(/"/g, "&quot;")}" width="800" height="500" style="max-width: 100%; height: auto; border-radius: 8px;">\n  <figcaption style="font-size: 14px; color: #666; margin-top: 8px; font-style: italic;">${displayCaption}</figcaption>\n</figure>\n`;
+
+      html = html.replace(matchedH2, matchedH2 + figureHtml);
+      insertedCount++;
+    }
+  }
+
+  return { html, insertedCount };
+}
 const { resolveApiKeys } = require("../services/api-key-pool");
 const pipelineQueue = require("../services/pipeline-queue");
 const { checkAiCredits, consumeCredits } = require("../middleware/ai-credit-tracker");
@@ -358,6 +427,9 @@ ${draft.customPrompt ? `📝 HƯỚNG DẪN BỔ SUNG: ${draft.customPrompt}` : 
         await updateStatus("content", { content: { html, raw: rawContent, wordCount, mode: contentMode, targetWordCount: contentWordCount, usedProvider, usedModel }, quality });
         console.log(`[Auto-Pipeline] ${keyword}: Content done (${wordCount} words, ${contentMode} mode, QC: ${quality.score}/100, provider: ${usedProvider})`);
 
+        // Track used image URLs so Thumbnail and Section images never pick duplicates
+        const usedImageUrls = new Set();
+
         // STEP 4: Thumbnail (skip on error)
         try {
           await updateStatus("content", { autoStep: "thumbnail" });
@@ -368,7 +440,16 @@ ${draft.customPrompt ? `📝 HƯỚNG DẪN BỔ SUNG: ${draft.customPrompt}` : 
             const pr = await aiService.generate(`Create a SHORT image prompt (max 30 words, English) for blog thumbnail about "${articleTitle}". Sections: ${sectionHeadings}. Style: professional, NO text/watermarks/faces. Return ONLY prompt.`, settings, { apiKeys });
             imgPrompt = pr.trim().replace(/^["']|["']$/g, "").substring(0, 400);
           } catch { imgPrompt = `Professional photo representing "${articleTitle}", modern clean, bright lighting, no text`; }
-          const imgUrl = await aiService.generateImage(imgPrompt, settings, { width: 1200, height: 630, apiKeys });
+          const imgUrl = await aiService.generateImage(imgPrompt, settings, {
+            width: 1200,
+            height: 630,
+            apiKeys,
+            imageType: "thumbnail",
+            searchQuery: `${keyword} ${articleTitle}`,
+            fallbackQuery: keyword,
+            excludeUrls: usedImageUrls,
+          });
+          if (imgUrl) usedImageUrls.add(imgUrl);
           await updateStatus("content", { thumbnail: { status: "done", url: imgUrl, prompt: imgPrompt } });
           console.log(`[Auto-Pipeline] ${keyword}: Thumbnail done`);
         } catch (e) {
@@ -376,7 +457,7 @@ ${draft.customPrompt ? `📝 HƯỚNG DẪN BỔ SUNG: ${draft.customPrompt}` : 
           await updateStatus("content", { thumbnail: { status: "skipped", error: e.message } });
         }
 
-        // STEP 5: Section Images (skip on error)
+        // STEP 5: Section Images + Auto-insert into Article HTML (skip on error)
         try {
           await updateStatus("content", { autoStep: "sections" });
           const sections = (outline.outline || []).filter(s => s.tag === "h2");
@@ -389,12 +470,30 @@ ${draft.customPrompt ? `📝 HƯỚNG DẪN BỔ SUNG: ${draft.customPrompt}` : 
                 const pr = await aiService.generate(`Create SHORT image prompt (max 25 words, English) for blog section: "${sec.text}". Professional photo, NO text/faces. Return ONLY prompt.`, settings, { apiKeys });
                 sp = pr.trim().replace(/^["']|["']$/g, "").substring(0, 300);
               } catch { sp = `Professional illustration of ${sec.text}, modern style, bright lighting`; }
-              const url = await aiService.generateImage(sp, settings, { width: 800, height: 500, apiKeys });
+              const url = await aiService.generateImage(sp, settings, {
+                width: 800,
+                height: 500,
+                apiKeys,
+                imageType: "section",
+                searchQuery: `${keyword} ${sec.text}`,
+                fallbackQuery: keyword,
+                excludeUrls: usedImageUrls,
+              });
+              if (url) usedImageUrls.add(url);
               imgs.push({ sectionHeading: sec.text, status: "done", url, prompt: sp });
             } catch (e) { imgs.push({ sectionHeading: sec.text, status: "failed", error: e.message }); }
           }
-          await updateStatus("content", { sections: { status: "done", images: imgs } });
-          console.log(`[Auto-Pipeline] ${keyword}: Section images done (${imgs.filter(i=>i.status==="done").length}/${imgs.length})`);
+
+          // Auto-insert generated section images into article HTML and re-validate QC
+          const { html: htmlWithImages, insertedCount } = insertSectionImagesIntoHtml(html, imgs, keyword);
+          html = htmlWithImages;
+          const updatedQuality = validateArticle(html, outline.title || keyword, "guide", { keyword });
+          await updateStatus("content", {
+            content: { html, raw: rawContent, wordCount, mode: contentMode, targetWordCount: contentWordCount, usedProvider, usedModel },
+            quality: updatedQuality,
+            sections: { status: "done", images: imgs, insertedIntoContent: insertedCount > 0 },
+          });
+          console.log(`[Auto-Pipeline] ${keyword}: Section images done (${imgs.filter(i=>i.status==="done").length}/${imgs.length}, inserted ${insertedCount} into HTML)`);
         } catch (e) {
           console.log(`[Auto-Pipeline] ${keyword}: Section images SKIPPED - ${e.message}`);
           await updateStatus("content", { sections: { status: "skipped", error: e.message } });
@@ -426,7 +525,10 @@ ${draft.customPrompt ? `📝 HƯỚNG DẪN BỔ SUNG: ${draft.customPrompt}` : 
 
             let featuredMediaId = null;
             if (fp.thumbnail?.url) {
-              try { featuredMediaId = await wpService.uploadImage(site, fp.thumbnail.url, slug); } catch {}
+              try {
+                const uploaded = await wpService.uploadImage(site, fp.thumbnail.url, slug);
+                featuredMediaId = uploaded?.id || null;
+              } catch {}
             }
 
             const quality = validateArticle(
@@ -1195,12 +1297,27 @@ ${draft.customPrompt ? `📝 HƯỚNG DẪN BỔ SUNG: ${draft.customPrompt}` : 
       .replace(/\n\n/g, "</p><p>")
       .replace(/\n/g, "<br/>") + "</p>";
 
+    let updatedSections = draft.pipeline?.sections;
+    if (updatedSections?.images?.length > 0) {
+      const { html: htmlWithImgs, insertedCount } = insertSectionImagesIntoHtml(html, updatedSections.images, keyword);
+      if (insertedCount > 0) {
+        html = htmlWithImgs;
+        updatedSections = { ...updatedSections, insertedIntoContent: true };
+      }
+    }
+
     const quality = validateArticle(html, outline.title || keyword, "guide", {
       keyword: outline.focusKeyword || keyword,
     });
 
     await storage.update("standalone-drafts", req.params.id, {
-      pipeline: { ...draft.pipeline, content: { html, raw, wordCount, mode, targetWordCount }, quality, autoStep: null },
+      pipeline: {
+        ...draft.pipeline,
+        content: { html, raw, wordCount, mode, targetWordCount },
+        ...(updatedSections ? { sections: updatedSections } : {}),
+        quality,
+        autoStep: null,
+      },
       status: "content",
       updatedAt: new Date().toISOString(),
     });
@@ -1266,7 +1383,14 @@ Return ONLY the prompt.`,
       imagePrompt = `Professional high quality photo representing "${articleTitle}", modern clean design, bright studio lighting, detailed, no text, no watermark`;
     }
 
-    const imageUrl = await aiService.generateImage(imagePrompt, settings, { width: 1200, height: 630, apiKeys });
+    const imageUrl = await aiService.generateImage(imagePrompt, settings, {
+      width: 1200,
+      height: 630,
+      apiKeys,
+      imageType: "thumbnail",
+      searchQuery: `${keyword} ${articleTitle}`,
+      fallbackQuery: keyword,
+    });
 
     // Update draft
     await storage.update("standalone-drafts", req.params.id, {
@@ -1308,6 +1432,8 @@ router.post("/drafts/:id/section-images", async (req, res) => {
 
     const keyword = draft.keyword || "";
     const articleTitle = outline.title || keyword;
+    const usedImageUrls = new Set();
+    if (draft.pipeline?.thumbnail?.url) usedImageUrls.add(draft.pipeline.thumbnail.url);
 
     // Smart selection: pick 3-4 visual sections
     let selectedSections = sections.filter(s => s.tag === "h2");
@@ -1336,24 +1462,65 @@ Return ONLY the prompt.`,
           sectionPrompt = `Professional illustration of ${section.text}, modern clean style, bright lighting, no text`;
         }
 
-        const imageUrl = await aiService.generateImage(sectionPrompt, settings, { width: 800, height: 500, apiKeys });
+        const imageUrl = await aiService.generateImage(sectionPrompt, settings, {
+          width: 800,
+          height: 500,
+          apiKeys,
+          imageType: "section",
+          searchQuery: `${keyword} ${section.text}`,
+          fallbackQuery: keyword,
+          excludeUrls: usedImageUrls,
+        });
+        if (imageUrl) usedImageUrls.add(imageUrl);
         sectionImages.push({ sectionHeading: section.text, status: "done", url: imageUrl, prompt: sectionPrompt });
       } catch (e) {
         sectionImages.push({ sectionHeading: section.text, status: "failed", error: e.message });
       }
     }
 
+    // Automatically insert section images into HTML if content already exists
+    let updatedContent = draft.pipeline?.content;
+    let updatedQuality = draft.pipeline?.quality;
+    let insertedIntoContent = false;
+    if (updatedContent?.html) {
+      const { html: newHtml, insertedCount } = insertSectionImagesIntoHtml(updatedContent.html, sectionImages, keyword);
+      if (insertedCount > 0) {
+        const wordCount = newHtml.replace(/<[^>]*>/g, "").split(/\s+/).filter(Boolean).length;
+        updatedContent = { ...updatedContent, html: newHtml, wordCount };
+        updatedQuality = validateArticle(newHtml, articleTitle, "guide", { keyword });
+        insertedIntoContent = true;
+      }
+    }
+
     await storage.update("standalone-drafts", req.params.id, {
       pipeline: {
         ...draft.pipeline,
-        sections: { status: "done", images: sectionImages },
+        ...(updatedContent ? { content: updatedContent } : {}),
+        ...(updatedQuality ? { quality: updatedQuality } : {}),
+        sections: { status: "done", images: sectionImages, insertedIntoContent },
       },
       updatedAt: new Date().toISOString(),
     });
 
-    res.json({ success: true, images: sectionImages });
+    res.json({ success: true, images: sectionImages, insertedIntoContent });
   } catch (error) {
     console.error("[Draft-SectionImages] Error:", error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST search real images from Google/Bing for manual replacement
+router.post("/search-images", async (req, res) => {
+  try {
+    const { query, limit = 16 } = req.body || {};
+    if (!query || !String(query).trim()) {
+      return res.status(400).json({ error: "Vui lòng nhập từ khóa tìm ảnh" });
+    }
+    const apiKeys = await resolveApiKeys(req.userId, req.license);
+    const results = await aiService.searchRealImages(String(query).trim(), { apiKeys, limit });
+    res.json({ success: true, results });
+  } catch (error) {
+    console.error("[Search-Images] Error:", error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1377,47 +1544,16 @@ router.post("/drafts/:id/insert-images", async (req, res) => {
     }
 
     const keyword = draft.keyword || "";
-    let html = content.html;
-    let insertedCount = 0;
+    const { html, insertedCount } = insertSectionImagesIntoHtml(content.html, sectionImages, keyword);
 
-    // For each section image, find matching H2 heading and insert image after it
-    for (const img of sectionImages) {
-      if (img.status !== "done" || !img.url) continue;
-
-      const heading = img.sectionHeading || "";
-      if (!heading) continue;
-
-      // Escape special regex characters in heading
-      const escapedHeading = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-      // Match the H2 tag containing this heading text (flexible matching)
-      // Handles: <h2>exact text</h2>, <h2 id="...">text</h2>, etc.
-      const h2Regex = new RegExp(
-        `(<h2[^>]*>[^<]*${escapedHeading}[^<]*<\\/h2>)`,
-        "i"
-      );
-      const match = html.match(h2Regex);
-
-      if (match) {
-        // Build SEO-optimized alt text: "Section heading - keyword"
-        const altText = keyword ? `${heading} - ${keyword}` : heading;
-        const titleText = heading;
-
-        // Create <figure> block with proper SEO attributes
-        const figureHtml = `\n<figure class="article-section-image" style="margin: 24px 0; text-align: center;">\n  <img src="${img.url}" alt="${altText.replace(/"/g, '&quot;')}" loading="lazy" title="${titleText.replace(/"/g, '&quot;')}" width="800" height="500" style="max-width: 100%; height: auto; border-radius: 8px;">\n  <figcaption style="font-size: 14px; color: #666; margin-top: 8px; font-style: italic;">${heading}</figcaption>\n</figure>\n`;
-
-        // Insert after the H2 heading
-        html = html.replace(match[0], match[0] + figureHtml);
-        insertedCount++;
-      }
-    }
-
-    // Update content HTML
+    // Update content HTML and re-validate QC
     const wordCount = html.replace(/<[^>]*>/g, "").split(/\s+/).filter(Boolean).length;
+    const quality = validateArticle(html, pipeline.outline?.title || keyword, "guide", { keyword });
     await storage.update("standalone-drafts", req.params.id, {
       pipeline: {
         ...pipeline,
         content: { ...content, html, wordCount },
+        quality,
         sections: { ...sections, insertedIntoContent: true },
       },
       updatedAt: new Date().toISOString(),
@@ -1437,15 +1573,25 @@ router.put("/drafts/:id/thumbnail-url", async (req, res) => {
     const draft = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
     if (!draft) return res.status(404).json({ error: "Draft not found" });
 
-    const { url, base64 } = req.body;
-    const imageUrl = url || base64;
+    const { url, base64, thumbUrl } = req.body;
+    let imageUrl = url || base64;
     if (!imageUrl) return res.status(400).json({ error: "URL hoặc base64 là bắt buộc" });
+
+    if (base64 && String(base64).startsWith("data:image")) {
+      imageUrl = imageStore.normalizeImageUrl(base64, "thumb");
+    } else if (url && /^https?:\/\//i.test(url)) {
+      try {
+        imageUrl = await aiService.downloadAndStoreImage(url, "thumb", thumbUrl);
+      } catch {
+        imageUrl = url;
+      }
+    }
 
     const pipeline = draft.pipeline || {};
     await storage.update("standalone-drafts", req.params.id, {
       pipeline: {
         ...pipeline,
-        thumbnail: { status: "done", url: imageUrl, prompt: "Manual upload" },
+        thumbnail: { status: "done", url: imageUrl, prompt: "Manual / Google Image" },
       },
       updatedAt: new Date().toISOString(),
     });
@@ -1473,22 +1619,45 @@ router.put("/drafts/:id/section-image/:index", async (req, res) => {
       return res.status(400).json({ error: "Index ảnh không hợp lệ" });
     }
 
-    const { url, base64 } = req.body;
-    const imageUrl = url || base64;
+    const { url, base64, thumbUrl } = req.body;
+    let imageUrl = url || base64;
     if (!imageUrl) return res.status(400).json({ error: "URL hoặc base64 là bắt buộc" });
+
+    if (base64 && String(base64).startsWith("data:image")) {
+      imageUrl = imageStore.normalizeImageUrl(base64, "section");
+    } else if (url && /^https?:\/\//i.test(url)) {
+      try {
+        imageUrl = await aiService.downloadAndStoreImage(url, "section", thumbUrl);
+      } catch {
+        imageUrl = url;
+      }
+    }
 
     // Update the specific image
     images[idx] = {
       ...images[idx],
       status: "done",
       url: imageUrl,
-      prompt: images[idx].prompt ? `${images[idx].prompt} (replaced)` : "Manual upload",
+      prompt: images[idx].prompt ? `${images[idx].prompt} (replaced)` : "Manual / Google Image",
     };
+
+    // Re-sync article HTML if content already exists
+    let updatedContent = pipeline.content;
+    let insertedIntoContent = sections.insertedIntoContent || false;
+    if (updatedContent?.html) {
+      const { html: newHtml, insertedCount } = insertSectionImagesIntoHtml(updatedContent.html, images, draft.keyword || "");
+      if (insertedCount > 0) {
+        const wordCount = newHtml.replace(/<[^>]*>/g, "").split(/\s+/).filter(Boolean).length;
+        updatedContent = { ...updatedContent, html: newHtml, wordCount };
+        insertedIntoContent = true;
+      }
+    }
 
     await storage.update("standalone-drafts", req.params.id, {
       pipeline: {
         ...pipeline,
-        sections: { ...sections, images, insertedIntoContent: false },
+        ...(updatedContent ? { content: updatedContent } : {}),
+        sections: { ...sections, images, insertedIntoContent },
       },
       updatedAt: new Date().toISOString(),
     });

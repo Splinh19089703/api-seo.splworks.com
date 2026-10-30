@@ -1753,6 +1753,9 @@ Return ONLY the prompt, nothing else.`,
       width: 1200,
       height: 630,
       apiKeys,
+      imageType: "thumbnail",
+      searchQuery: `${keyword} ${articleTitle}`,
+      fallbackQuery: keyword,
     });
 
     // Update article with thumbnail URL
@@ -1779,6 +1782,70 @@ Return ONLY the prompt, nothing else.`,
     res.status(500).json({ error: error.message });
   }
 });
+
+/**
+ * Helper: Insert generated section images (<figure>) into project article HTML after matching H2 headings.
+ */
+function insertProjectSectionImagesIntoHtml(rawHtml, sectionImages = [], keyword = "") {
+  if (!rawHtml || typeof rawHtml !== "string") {
+    return { html: rawHtml || "", insertedCount: 0 };
+  }
+  let html = rawHtml
+    .replace(/<p[^>]*>\s*\[IMG:[^\]]*\]\s*<\/p>/gi, "")
+    .replace(/\[IMG:[^\]]*\]/gi, "")
+    .replace(/\n?<figure class="article-section-image"[\s\S]*?<\/figure>\n?/gi, "");
+
+  const validImages = (sectionImages || []).filter(i => i && i.status === "done" && i.url);
+  if (validImages.length === 0) {
+    return { html, insertedCount: 0 };
+  }
+
+  let insertedCount = 0;
+  const usedH2Matches = new Set();
+
+  for (const img of validImages) {
+    const heading = (img.sectionHeading || "").trim();
+    const cleanHeading = heading
+      .replace(/^H[23]:\s*/i, "")
+      .replace(/^(?:phần|chương|bước|mục)\s*\d+[:.\s-]*/i, "")
+      .replace(/^(?:[IVXLC]+|\d+(?:\.\d+)*)[:.)\s-]+/i, "")
+      .trim();
+
+    let matchedH2 = null;
+    if (cleanHeading) {
+      const escapedHeading = cleanHeading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const h2Regex = new RegExp(`(<h2[^>]*>[\\s\\S]*?${escapedHeading}[\\s\\S]*?<\\/h2>)`, "i");
+      const m = html.match(h2Regex);
+      if (m && !usedH2Matches.has(m[0])) {
+        matchedH2 = m[0];
+      }
+    }
+
+    if (!matchedH2) {
+      const allH2s = html.match(/<h2[^>]*>[\s\S]*?<\/h2>/gi) || [];
+      for (const h2 of allH2s) {
+        if (!usedH2Matches.has(h2)) {
+          matchedH2 = h2;
+          break;
+        }
+      }
+    }
+
+    if (matchedH2) {
+      usedH2Matches.add(matchedH2);
+      const plainH2Text = matchedH2.replace(/<[^>]*>/g, "").trim();
+      const displayCaption = cleanHeading || plainH2Text;
+      const altText = keyword ? `${displayCaption} - ${keyword}` : displayCaption;
+
+      const figureHtml = `\n<figure class="article-section-image" style="margin: 24px 0; text-align: center;">\n  <img src="${img.url}" alt="${altText.replace(/"/g, "&quot;")}" loading="lazy" title="${displayCaption.replace(/"/g, "&quot;")}" width="800" height="450" style="max-width: 100%; height: auto; border-radius: 8px;">\n  <figcaption style="font-size: 14px; color: #666; margin-top: 8px; font-style: italic;">${displayCaption}</figcaption>\n</figure>\n`;
+
+      html = html.replace(matchedH2, matchedH2 + figureHtml);
+      insertedCount++;
+    }
+  }
+
+  return { html, insertedCount };
+}
 
 // POST generate section images for article
 router.post(
@@ -1847,6 +1914,8 @@ Rules:
       }
 
       const sectionImages = [];
+      const usedImageUrls = new Set();
+      if (article.pipeline?.thumbnail?.url) usedImageUrls.add(article.pipeline.thumbnail.url);
 
       // Generate image for selected sections
       for (const section of selectedSections) {
@@ -1897,8 +1966,13 @@ Return ONLY the prompt.`,
               width: 800,
               height: 450,
               apiKeys,
+              imageType: "section",
+              searchQuery: `${keyword} ${sectionHeading}`,
+              fallbackQuery: keyword,
+              excludeUrls: usedImageUrls,
             },
           );
+          if (imageUrl) usedImageUrls.add(imageUrl);
 
           sectionImages.push({
             sectionHeading,
@@ -1925,19 +1999,42 @@ Return ONLY the prompt.`,
         }
       }
 
+      // Auto-insert generated section images into article HTML if content exists
+      let updatedContentNode = article.pipeline?.content;
+      let updatedQuality = article.pipeline?.quality;
+      let insertedIntoContent = false;
+      if (updatedContentNode?.data?.html) {
+        const { html: newHtml, insertedCount } = insertProjectSectionImagesIntoHtml(
+          updatedContentNode.data.html,
+          sectionImages,
+          keyword
+        );
+        if (insertedCount > 0) {
+          updatedContentNode = {
+            ...updatedContentNode,
+            data: { ...updatedContentNode.data, html: newHtml },
+          };
+          updatedQuality = validateArticle(newHtml, articleTitle, article.contentAngle || "guide", { keyword });
+          insertedIntoContent = true;
+        }
+      }
+
       // Save all section images
       await storage.update("articles", req.params.articleId, {
         pipeline: {
           ...article.pipeline,
+          ...(updatedContentNode ? { content: updatedContentNode } : {}),
+          ...(updatedQuality ? { quality: updatedQuality } : {}),
           sections: {
             status: "done",
             images: sectionImages,
+            insertedIntoContent,
             generatedAt: new Date().toISOString(),
           },
         },
       });
 
-      res.json({ success: true, images: sectionImages });
+      res.json({ success: true, images: sectionImages, insertedIntoContent });
     } catch (error) {
       const article = await storage.getByIdForUser("articles", req.params.articleId, req.userId);
       if (article) {
@@ -1957,6 +2054,114 @@ Return ONLY the prompt.`,
     }
   },
 );
+
+// PUT replace thumbnail for project article
+router.put("/:projectId/articles/:articleId/thumbnail-url", async (req, res) => {
+  try {
+    const article = await storage.getByIdForUser("articles", req.params.articleId, req.userId);
+    if (!article) return res.status(404).json({ error: "Article not found" });
+
+    const { url, base64, thumbUrl } = req.body;
+    let imageUrl = url || base64;
+    if (!imageUrl) return res.status(400).json({ error: "URL hoặc base64 là bắt buộc" });
+
+    const aiService = require("../services/ai-service");
+    const imageStore = require("../services/image-store");
+
+    if (base64 && String(base64).startsWith("data:image")) {
+      imageUrl = imageStore.normalizeImageUrl(base64, "thumb");
+    } else if (url && /^https?:\/\//i.test(url)) {
+      try {
+        imageUrl = await aiService.downloadAndStoreImage(url, "thumb", thumbUrl);
+      } catch {
+        imageUrl = url;
+      }
+    }
+
+    await storage.update("articles", req.params.articleId, {
+      pipeline: {
+        ...article.pipeline,
+        thumbnail: { status: "done", url: imageUrl, prompt: "Manual / Google Image" },
+      },
+    });
+
+    res.json({ success: true, url: imageUrl });
+  } catch (error) {
+    console.error("[Article-Thumbnail] Error:", error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT replace section image by index for project article
+router.put("/:projectId/articles/:articleId/section-image/:index", async (req, res) => {
+  try {
+    const article = await storage.getByIdForUser("articles", req.params.articleId, req.userId);
+    if (!article) return res.status(404).json({ error: "Article not found" });
+
+    const idx = parseInt(req.params.index, 10);
+    const pipeline = article.pipeline || {};
+    const sections = pipeline.sections || {};
+    const images = [...(sections.images || [])];
+
+    if (idx < 0 || idx >= images.length) {
+      return res.status(400).json({ error: "Index ảnh không hợp lệ" });
+    }
+
+    const { url, base64, thumbUrl } = req.body;
+    let imageUrl = url || base64;
+    if (!imageUrl) return res.status(400).json({ error: "URL hoặc base64 là bắt buộc" });
+
+    const aiService = require("../services/ai-service");
+    const imageStore = require("../services/image-store");
+
+    if (base64 && String(base64).startsWith("data:image")) {
+      imageUrl = imageStore.normalizeImageUrl(base64, "section");
+    } else if (url && /^https?:\/\//i.test(url)) {
+      try {
+        imageUrl = await aiService.downloadAndStoreImage(url, "section", thumbUrl);
+      } catch {
+        imageUrl = url;
+      }
+    }
+
+    images[idx] = {
+      ...images[idx],
+      status: "done",
+      url: imageUrl,
+      prompt: images[idx].prompt ? `${images[idx].prompt} (replaced)` : "Manual / Google Image",
+    };
+
+    let updatedContentNode = pipeline.content;
+    let insertedIntoContent = sections.insertedIntoContent || false;
+    if (updatedContentNode?.data?.html) {
+      const { html: newHtml, insertedCount } = insertProjectSectionImagesIntoHtml(
+        updatedContentNode.data.html,
+        images,
+        article.keyword || article.title || ""
+      );
+      if (insertedCount > 0) {
+        updatedContentNode = {
+          ...updatedContentNode,
+          data: { ...updatedContentNode.data, html: newHtml },
+        };
+        insertedIntoContent = true;
+      }
+    }
+
+    await storage.update("articles", req.params.articleId, {
+      pipeline: {
+        ...pipeline,
+        ...(updatedContentNode ? { content: updatedContentNode } : {}),
+        sections: { ...sections, images, insertedIntoContent },
+      },
+    });
+
+    res.json({ success: true, index: idx, url: imageUrl });
+  } catch (error) {
+    console.error("[Article-SectionImage] Error:", error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // ===== AI PIPELINE ENDPOINTS =====
 
@@ -2503,6 +2708,24 @@ ${CREATIVE_RULES}`;
       }
     }
 
+    // Strip leftover [IMG: ...] placeholders and auto-insert existing section images if available
+    let updatedSections = article.pipeline?.sections;
+    if (updatedSections?.images?.length > 0) {
+      const { html: htmlWithImages, insertedCount } = insertProjectSectionImagesIntoHtml(
+        htmlContent,
+        updatedSections.images,
+        keyword
+      );
+      htmlContent = htmlWithImages;
+      if (insertedCount > 0) {
+        updatedSections = { ...updatedSections, insertedIntoContent: true };
+      }
+    } else {
+      htmlContent = htmlContent
+        .replace(/<p[^>]*>\s*\[IMG:[^\]]*\]\s*<\/p>/gi, "")
+        .replace(/\[IMG:[^\]]*\]/gi, "");
+    }
+
     const wordCount = htmlContent.replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
     const readingTime = Math.ceil(wordCount / 200);
 
@@ -2523,6 +2746,7 @@ ${CREATIVE_RULES}`;
       pipeline: {
         ...article.pipeline,
         content: { status: "done", data: contentData },
+        ...(updatedSections ? { sections: updatedSections } : {}),
         quality: qualityResult,
       },
       // Auto set approval status to pending review
