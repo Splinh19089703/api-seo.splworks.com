@@ -190,6 +190,8 @@ export const api = {
     fetchApi(`/projects/${pid}/articles/${aid}/thumbnail-url`, { method: "PUT", body: data }),
   setArticleSectionImage: (pid, aid, index, data) =>
     fetchApi(`/projects/${pid}/articles/${aid}/section-image/${index}`, { method: "PUT", body: data }),
+  autoAttachArticleImages: (pid, aid) =>
+    fetchApi(`/projects/${pid}/articles/${aid}/auto-attach-images`, { method: "POST" }),
   searchImages: (query, limit = 16) =>
     fetchApi("/content/search-images", { method: "POST", body: { query, limit } }),
   generateResearch: (pid, aid) =>
@@ -348,6 +350,8 @@ export const api = {
     fetchApi("/content/drafts/bulk", { method: "POST", body: data }),
   insertImagesIntoContent: (id) =>
     fetchApi(`/content/drafts/${id}/insert-images`, { method: "POST" }),
+  autoAttachDraftImages: (id) =>
+    fetchApi(`/content/drafts/${id}/auto-attach-images`, { method: "POST" }),
   setDraftThumbnailUrl: (id, data) =>
     fetchApi(`/content/drafts/${id}/thumbnail-url`, { method: "PUT", body: data }),
   setDraftSectionImage: (id, index, data) =>

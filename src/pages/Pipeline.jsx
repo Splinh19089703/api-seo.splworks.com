@@ -1168,10 +1168,11 @@ function DraftViewer({ draft, onBack }) {
               <img src={thumbUrl} alt="Thumbnail" style={{ width: "100%", height: "auto", display: "block" }} />
             </div>
             {thumb.prompt && <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12, fontStyle: "italic" }}>{"📝"} Prompt: {thumb.prompt.substring(0, 200)}{thumb.prompt.length > 200 ? "..." : ""}</div>}
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button className="btn btn-primary btn-sm" style={{ flex: 1, background: "linear-gradient(135deg, #059669, #10b981)" }} onClick={() => runStep("thumbnail", () => api.autoAttachDraftImages(d.id))} disabled={processingStep}>{"⚡"} Tự động tìm & gắn đủ ảnh (Không bản quyền)</button>
               <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={() => runStep("thumbnail", () => api.generateDraftThumbnail(d.id))} disabled={processingStep}>{"🔄"} Tạo lại</button>
-              <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={() => setShowImageReplacer({ type: "thumbnail" })}>{"🔍"} Ảnh Google / Upload</button>
-              <a href={thumbUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primary btn-sm" style={{ flex: 1, textAlign: "center" }}>{"🔗"} Mở ảnh gốc</a>
+              <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={() => setShowImageReplacer({ type: "thumbnail" })}>{"🔍"} Đổi thủ công</button>
+              <a href={thumbUrl} target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm" style={{ flex: 1, textAlign: "center" }}>{"🔗"} Mở ảnh gốc</a>
             </div>
             {showImageReplacer?.type === "thumbnail" && (
               <ImageReplacer label="Thay thumbnail" defaultQuery={d.keyword || outline.title || ""} onClose={() => setShowImageReplacer(null)}
@@ -1184,9 +1185,10 @@ function DraftViewer({ draft, onBack }) {
             <div style={{ fontSize: 48, marginBottom: 12 }}>{"❌"}</div>
             <h3 style={{ margin: "0 0 8px", fontWeight: 600, color: "var(--accent-red)" }}>Tạo thumbnail thất bại</h3>
             {thumb?.error && <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>{thumb.error}</p>}
-            <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-              <button className="btn btn-primary btn-sm" onClick={() => runStep("thumbnail", () => api.generateDraftThumbnail(d.id))} disabled={processingStep}>{"🔄"} Thử lại</button>
-              <button className="btn btn-secondary btn-sm" onClick={() => setShowImageReplacer({ type: "thumbnail" })}>{"🔍"} Chọn ảnh Google / Upload</button>
+            <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+              <button className="btn btn-primary btn-sm" style={{ background: "linear-gradient(135deg, #059669, #10b981)" }} onClick={() => runStep("thumbnail", () => api.autoAttachDraftImages(d.id))} disabled={processingStep}>{"⚡"} Tự động tìm & gắn đủ ảnh (Không bản quyền)</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => runStep("thumbnail", () => api.generateDraftThumbnail(d.id))} disabled={processingStep}>{"🔄"} Thử lại</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowImageReplacer({ type: "thumbnail" })}>{"🔍"} Chọn ảnh thủ công</button>
             </div>
             {showImageReplacer?.type === "thumbnail" && (
               <ImageReplacer label="Chọn thumbnail" defaultQuery={d.keyword || outline.title || ""} onClose={() => setShowImageReplacer(null)}
@@ -1198,11 +1200,12 @@ function DraftViewer({ draft, onBack }) {
           <div className="card" style={{ textAlign: "center", padding: "60px 40px" }}>
             <div style={{ fontSize: 48, marginBottom: 12, opacity: 0.5 }}>{"🖼️"}</div>
             <h3 style={{ margin: "0 0 8px", fontWeight: 600 }}>Chưa có thumbnail</h3>
-            <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>AI hoặc Google Images sẽ tự động lấy ảnh đại diện chuẩn chủ đề cho bài viết.</p>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>Hệ thống tự động tìm ảnh chuẩn chủ đề không bản quyền (Openverse CC0, Wikimedia, Google/Bing CC) và gắn trực tiếp vào bài viết.</p>
             <ErrorAlert stepKey="thumbnail" />
-            <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-              <button className="btn btn-primary btn-sm" style={{ background: "var(--accent-green)" }} disabled={!content.html || processingStep} onClick={() => runStep("thumbnail", () => api.generateDraftThumbnail(d.id))}>{"✨"} Tạo thumbnail tự động</button>
-              <button className="btn btn-secondary btn-sm" onClick={() => setShowImageReplacer({ type: "thumbnail" })}>{"🔍"} Tìm ảnh Google / Upload</button>
+            <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+              <button className="btn btn-primary btn-sm" style={{ background: "linear-gradient(135deg, #059669, #10b981)" }} disabled={processingStep} onClick={() => runStep("thumbnail", () => api.autoAttachDraftImages(d.id))}>{"⚡"} Tự động tìm & gắn đủ ảnh (Không bản quyền)</button>
+              <button className="btn btn-secondary btn-sm" disabled={!content.html || processingStep} onClick={() => runStep("thumbnail", () => api.generateDraftThumbnail(d.id))}>{"✨"} Chỉ tạo thumbnail</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowImageReplacer({ type: "thumbnail" })}>{"🔍"} Chọn thủ công</button>
               <button className="btn btn-secondary btn-sm" onClick={async () => { await api.updateDraft(d.id, { pipeline: { ...p, thumbnail: { status: "done", url: null, prompt: "Skipped" } } }); const updated = await api.getDraft(d.id); setD(updated); }}>{"⏭️"} Bỏ qua</button>
             </div>
             {showImageReplacer?.type === "thumbnail" && (
@@ -1241,6 +1244,7 @@ function DraftViewer({ draft, onBack }) {
                     {isInserted ? "🔄 Chèn lại ảnh" : "📥 Chèn ảnh vào bài viết"}
                   </button>
                 )}
+                <button className="btn btn-primary btn-sm" style={{ background: "linear-gradient(135deg, #059669, #10b981)" }} onClick={() => runStep("sections", () => api.autoAttachDraftImages(d.id))} disabled={processingStep}>{"⚡"} Tự động tìm & gắn đủ ảnh (Không bản quyền)</button>
                 <button className="btn btn-secondary btn-sm" onClick={() => runStep("sections", () => api.generateDraftSectionImages(d.id))} disabled={processingStep}>{"🔄"} Tạo lại</button>
               </div>
             </div>
@@ -1298,8 +1302,9 @@ function DraftViewer({ draft, onBack }) {
             <h3 style={{ margin: "0 0 8px", fontWeight: 600 }}>Chưa có ảnh sections</h3>
             <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>AI sẽ chọn 3-4 sections quan trọng nhất và tạo ảnh.</p>
             <ErrorAlert stepKey="sections" />
-            <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-              <button className="btn btn-primary btn-sm" style={{ background: "var(--accent-green)" }} disabled={!(outline.title || outline.outline?.length) || processingStep} onClick={() => runStep("sections", () => api.generateDraftSectionImages(d.id))}>{"✨"} Tạo ảnh sections</button>
+            <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+              <button className="btn btn-primary btn-sm" style={{ background: "linear-gradient(135deg, #059669, #10b981)" }} disabled={processingStep} onClick={() => runStep("sections", () => api.autoAttachDraftImages(d.id))}>{"⚡"} Tự động tìm & gắn đủ ảnh (Không bản quyền)</button>
+              <button className="btn btn-secondary btn-sm" disabled={!(outline.title || outline.outline?.length) || processingStep} onClick={() => runStep("sections", () => api.generateDraftSectionImages(d.id))}>{"✨"} Chỉ tạo ảnh sections</button>
               <button className="btn btn-secondary btn-sm" onClick={async () => { await api.updateDraft(d.id, { pipeline: { ...p, sections: { status: "done", images: [], skipped: true } } }); const updated = await api.getDraft(d.id); setD(updated); }}>{"⏭️"} Bỏ qua</button>
             </div>
           </div>

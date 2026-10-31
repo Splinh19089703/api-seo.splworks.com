@@ -557,12 +557,18 @@ export default function ArticleDetailView({ article, onBack, projectId }) {
                       );
                     })}
                     {/* Action bar */}
-                    <div style={{ padding: "10px 16px", display: "flex", gap: 8 }}>
+                    <div style={{ padding: "10px 16px", display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <button className="btn btn-sm" style={{
                         background: "linear-gradient(135deg, #6366f1, #8b5cf6)", color: "#fff",
                         border: "none", padding: "6px 16px", borderRadius: 20, fontSize: 12, fontWeight: 600
                       }} onClick={() => { setActiveStep("content"); setContentViewMode("sections"); setShowWarnings(false); }}>
                         ✂️ Sửa tất cả theo section
+                      </button>
+                      <button className="btn btn-sm" style={{
+                        background: "linear-gradient(135deg, #10b981, #059669)", color: "#fff",
+                        border: "none", padding: "6px 16px", borderRadius: 20, fontSize: 12, fontWeight: 600
+                      }} onClick={() => { setShowWarnings(false); runPipelineStep("sections", () => api.autoAttachArticleImages(projectId, article.id)); }}>
+                        ⚡ Tự động tìm & gắn đủ ảnh (Không bản quyền)
                       </button>
                       <button className="btn btn-secondary btn-sm" onClick={async () => {
                         try {
@@ -695,25 +701,27 @@ export default function ArticleDetailView({ article, onBack, projectId }) {
             {thumbUrl && thumbStatus === "done" && (
               <div className="card" style={{ padding: 16 }}>
                 <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", marginBottom: 12 }}><img src={thumbUrl} alt="Thumbnail" style={{ width: "100%", height: "auto", borderRadius: 8, display: "block" }} /></div>
-                {thumbPrompt && (<div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12, fontStyle: "italic" }}>📝 Prompt: {thumbPrompt.substring(0, 200)}{thumbPrompt.length > 200 ? "..." : ""}</div>)}
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={() => runPipelineStep("thumbnail", () => api.generateThumbnail(projectId, article.id))}>🔄 Tạo lại</button>
-                  <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={() => setShowImageReplacer({ type: "thumbnail" })}>🔍 Ảnh Google / Upload</button>
-                  <a href={thumbUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primary btn-sm" style={{ flex: 1, textAlign: "center" }}>🔗 Mở ảnh gốc</a>
+                {thumbPrompt && (<div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12, fontStyle: "italic" }}>📝 Nguồn/Prompt: {thumbPrompt.substring(0, 200)}{thumbPrompt.length > 200 ? "..." : ""}</div>)}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button className="btn btn-primary btn-sm" style={{ flex: 1, background: "var(--accent-green)" }} onClick={() => runPipelineStep("thumbnail", () => api.autoAttachArticleImages(projectId, article.id))}>⚡ Tự động tìm & gắn đủ ảnh (Không bản quyền)</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => runPipelineStep("thumbnail", () => api.generateThumbnail(projectId, article.id))}>🔄 Đổi Thumbnail tự động</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setShowImageReplacer({ type: "thumbnail" })}>📤 Chọn thủ công</button>
+                  <a href={thumbUrl} target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm" style={{ textAlign: "center" }}>🔗 Mở ảnh gốc</a>
                 </div>
               </div>
             )}
-            {thumbStatus === "generating" && (<div className="card" style={{ textAlign: "center", padding: "60px 40px" }}><span className="loader" style={{ marginBottom: 12, display: "inline-block" }} /><h3 style={{ margin: "12px 0 8px", fontWeight: 600 }}>Đang tạo thumbnail...</h3></div>)}
-            {thumbStatus === "failed" && (<div className="card" style={{ textAlign: "center", padding: "40px" }}><div style={{ fontSize: 48, marginBottom: 12 }}>❌</div><h3 style={{ margin: "0 0 8px", fontWeight: 600, color: "var(--accent-red)" }}>Tạo thumbnail thất bại</h3>{thumbError && (<p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>{thumbError}</p>)}<div style={{ display: "flex", gap: 8, justifyContent: "center" }}><button className="btn btn-primary btn-sm" onClick={() => runPipelineStep("thumbnail", () => api.generateThumbnail(projectId, article.id))}>🔄 Thử lại</button><button className="btn btn-secondary btn-sm" onClick={() => setShowImageReplacer({ type: "thumbnail" })}>🔍 Ảnh Google / Upload</button><button className="btn btn-secondary btn-sm" onClick={() => { api.updateArticle(projectId, article.id, { pipeline: { ...article.pipeline, thumbnail: { status: "done", url: null, prompt: "Skipped" } } }).then(() => onBack()); }}>⏭️ Bỏ qua</button></div></div>)}
+            {thumbStatus === "generating" && (<div className="card" style={{ textAlign: "center", padding: "60px 40px" }}><span className="loader" style={{ marginBottom: 12, display: "inline-block" }} /><h3 style={{ margin: "12px 0 8px", fontWeight: 600 }}>Đang tự động tìm & gắn ảnh không bản quyền...</h3></div>)}
+            {thumbStatus === "failed" && (<div className="card" style={{ textAlign: "center", padding: "40px" }}><div style={{ fontSize: 48, marginBottom: 12 }}>❌</div><h3 style={{ margin: "0 0 8px", fontWeight: 600, color: "var(--accent-red)" }}>Tạo thumbnail thất bại</h3>{thumbError && (<p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>{thumbError}</p>)}<div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}><button className="btn btn-primary btn-sm" style={{ background: "var(--accent-green)" }} onClick={() => runPipelineStep("thumbnail", () => api.autoAttachArticleImages(projectId, article.id))}>⚡ Tự động tìm & gắn đủ ảnh</button><button className="btn btn-secondary btn-sm" onClick={() => setShowImageReplacer({ type: "thumbnail" })}>📤 Chọn thủ công</button><button className="btn btn-secondary btn-sm" onClick={() => { api.updateArticle(projectId, article.id, { pipeline: { ...article.pipeline, thumbnail: { status: "done", url: null, prompt: "Skipped" } } }).then(() => onBack()); }}>⏭️ Bỏ qua</button></div></div>)}
             {thumbStatus === "pending" && !thumbUrl && (
               <div className="card" style={{ textAlign: "center", padding: "60px 40px" }}>
                 <div style={{ fontSize: 48, marginBottom: 12, opacity: 0.5 }}>🖼️</div>
                 <h3 style={{ margin: "0 0 8px", fontWeight: 600 }}>Chưa có thumbnail</h3>
-                <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>AI hoặc Google Images sẽ tự động lấy thumbnail theo keyword: <strong>{article.keyword || article.title}</strong></p>
+                <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>Hệ thống tự động tìm ảnh chuẩn chủ đề (không bản quyền) & gắn vào bài viết cho: <strong>{article.keyword || article.title}</strong></p>
                 <ErrorAlert stepKey="thumbnail" />
-                <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-                  <button className="btn btn-primary btn-sm" style={{ background: "var(--accent-green)" }} onClick={() => runPipelineStep("thumbnail", () => api.generateThumbnail(projectId, article.id))}>✨ Tạo thumbnail</button>
-                  <button className="btn btn-secondary btn-sm" onClick={() => setShowImageReplacer({ type: "thumbnail" })}>🔍 Tìm ảnh Google / Upload</button>
+                <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+                  <button className="btn btn-primary btn-sm" style={{ background: "var(--accent-green)" }} onClick={() => runPipelineStep("thumbnail", () => api.autoAttachArticleImages(projectId, article.id))}>⚡ Tự động tìm & gắn đủ ảnh (Thumbnail + Sections)</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => runPipelineStep("thumbnail", () => api.generateThumbnail(projectId, article.id))}>✨ Chỉ tạo Thumbnail</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setShowImageReplacer({ type: "thumbnail" })}>📤 Chọn thủ công</button>
                   <button className="btn btn-secondary btn-sm" onClick={() => { api.updateArticle(projectId, article.id, { pipeline: { ...article.pipeline, thumbnail: { status: "done", url: null, prompt: "Skipped" } } }).then(() => onBack()); }}>⏭️ Bỏ qua</button>
                 </div>
               </div>
@@ -740,18 +748,21 @@ export default function ArticleDetailView({ article, onBack, projectId }) {
           <div><KwPlanInfo />
             {sectionStatus === "done" && sectionImages.length > 0 && (
               <div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                  <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>✅ {sectionImages.filter((i) => i.status === "done").length}/{sectionImages.length} ảnh đã tạo & tự động chèn vào bài viết</span>
-                  <button className="btn btn-secondary btn-sm" onClick={() => runPipelineStep("sections", () => api.generateSectionImages(projectId, article.id))}>🔄 Tạo lại tất cả</button>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+                  <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>✅ {sectionImages.filter((i) => i.status === "done").length}/{sectionImages.length} ảnh không bản quyền đã tự động gắn vào bài viết</span>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="btn btn-primary btn-sm" style={{ background: "var(--accent-green)" }} onClick={() => runPipelineStep("sections", () => api.autoAttachArticleImages(projectId, article.id))}>⚡ Tự động tìm & gắn mới tất cả</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => runPipelineStep("sections", () => api.generateSectionImages(projectId, article.id))}>🔄 Tạo lại ảnh sections</button>
+                  </div>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12 }}>
                   {sectionImages.map((img, idx) => (
                     <div key={idx} className="card" style={{ padding: 12 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                         <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>{img.sectionHeading || `Section ${idx + 1}`}</div>
-                        <button className="btn btn-secondary btn-sm" style={{ padding: "2px 8px", fontSize: 10 }} onClick={() => setShowImageReplacer({ type: "section", index: idx })}>🔍 Đổi ảnh</button>
+                        <button className="btn btn-secondary btn-sm" style={{ padding: "2px 8px", fontSize: 10 }} onClick={() => setShowImageReplacer({ type: "section", index: idx })}>📤 Đổi ảnh</button>
                       </div>
-                      {img.status === "done" && img.url ? (<><img src={img.url} alt={img.sectionHeading} style={{ width: "100%", height: "auto", borderRadius: 6, display: "block", marginBottom: 8 }} />{img.prompt && (<div style={{ fontSize: 10, color: "var(--text-muted)", fontStyle: "italic" }}>📝 {img.prompt.substring(0, 100)}{img.prompt.length > 100 ? "..." : ""}</div>)}</>) : (<div style={{ padding: "20px", background: "var(--bg-tertiary)", borderRadius: 6, textAlign: "center", fontSize: 12, color: "var(--accent-red)" }}>❌ Tạo ảnh thất bại{img.error && (<div style={{ marginTop: 4, fontSize: 10 }}>{img.error}</div>)}<button className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => setShowImageReplacer({ type: "section", index: idx })}>🔍 Tìm ảnh Google / Upload</button></div>)}
+                      {img.status === "done" && img.url ? (<><img src={img.url} alt={img.sectionHeading} style={{ width: "100%", height: "auto", borderRadius: 6, display: "block", marginBottom: 8 }} />{img.prompt && (<div style={{ fontSize: 10, color: "var(--text-muted)", fontStyle: "italic" }}>📝 {img.prompt.substring(0, 100)}{img.prompt.length > 100 ? "..." : ""}</div>)}</>) : (<div style={{ padding: "20px", background: "var(--bg-tertiary)", borderRadius: 6, textAlign: "center", fontSize: 12, color: "var(--accent-red)" }}>❌ Tạo ảnh thất bại{img.error && (<div style={{ marginTop: 4, fontSize: 10 }}>{img.error}</div>)}<button className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => setShowImageReplacer({ type: "section", index: idx })}>📤 Đổi ảnh</button></div>)}
                     </div>
                   ))}
                 </div>
@@ -771,14 +782,15 @@ export default function ArticleDetailView({ article, onBack, projectId }) {
             {(sectionStatus === "pending" || sectionStatus === "generating") && (
               <div className="card" style={{ textAlign: "center", padding: "60px 40px" }}>
                 {sectionStatus === "generating" ? (
-                  <><span className="loader" style={{ display: "inline-block", marginBottom: 12 }} /><h3 style={{ margin: "0 0 8px", fontWeight: 600 }}>Đang tạo ảnh sections...</h3><p style={{ fontSize: 13, color: "var(--text-muted)" }}>AI đang chọn 3-4 sections quan trọng nhất và tạo ảnh.</p></>
+                  <><span className="loader" style={{ display: "inline-block", marginBottom: 12 }} /><h3 style={{ margin: "0 0 8px", fontWeight: 600 }}>Đang tự động tìm & gắn ảnh sections...</h3><p style={{ fontSize: 13, color: "var(--text-muted)" }}>Hệ thống đang chọn 3-4 sections quan trọng nhất, tìm ảnh không bản quyền và chèn thẳng vào bài viết.</p></>
                 ) : (
                   <>
                     <div style={{ fontSize: 48, marginBottom: 12, opacity: 0.5 }}>🖼️</div>
                     <h3 style={{ margin: "0 0 8px", fontWeight: 600 }}>Chưa có ảnh sections</h3>
-                    <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>AI sẽ chọn 3-4 sections quan trọng nhất và tạo ảnh minh họa.</p>
-                    <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-                      <button className="btn btn-primary btn-sm" style={{ background: "var(--accent-green)" }} disabled={!(article.pipeline?.outline?.status === "done")} onClick={() => runPipelineStep("sections", () => api.generateSectionImages(projectId, article.id))}>✨ Tạo ảnh sections</button>
+                    <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>Hệ thống sẽ tự động chọn 3-4 sections quan trọng nhất, tìm ảnh không bản quyền và gắn thẳng vào bài viết.</p>
+                    <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+                      <button className="btn btn-primary btn-sm" style={{ background: "var(--accent-green)" }} onClick={() => runPipelineStep("sections", () => api.autoAttachArticleImages(projectId, article.id))}>⚡ Tự động tìm & gắn đủ ảnh (Thumbnail + Sections)</button>
+                      <button className="btn btn-secondary btn-sm" disabled={!(article.pipeline?.outline?.status === "done")} onClick={() => runPipelineStep("sections", () => api.generateSectionImages(projectId, article.id))}>✨ Tạo ảnh sections</button>
                       <button className="btn btn-secondary btn-sm" onClick={() => { api.updateArticle(projectId, article.id, { pipeline: { ...article.pipeline, sections: { status: "done", images: [], skipped: true } } }).then(() => onBack()); }}>⏭️ Bỏ qua</button>
                     </div>
                   </>
