@@ -395,26 +395,50 @@ class AiService {
   }
 
   /**
-   * Clean Vietnamese/English search query for Google/Bing Images search
+   * Clean Vietnamese/English search query for Google/Bing/Openverse Images search
    */
   _cleanImageSearchQuery(rawQuery) {
     if (!rawQuery) return "";
     return String(rawQuery)
       .replace(/<[^>]*>/g, " ")
-      .replace(/^(?:phần|chương|bước|mục)\s*\d+[:.\s-]*/i, "")
+      .replace(/^(?:phần|chương|bước|mục|top)\s*\d+[:.\s-]*/i, "")
       .replace(/^(?:[IVXLC]+|\d+(?:\.\d+)*)[:.)\s-]+/i, "")
       .replace(/["'“”‘’`#*~_[\](){}]/g, " ")
-      .replace(/\b(?:là gì|như thế nào|tại sao|vì sao|hướng dẫn chi tiết|toàn tập|từ a đến z|từ a-z|mới nhất|chi tiết nhất)\b/gi, " ")
-      .replace(/\b(?:professional|photo|illustration|representing|modern|clean|style|bright|studio|lighting|detailed|no text|no watermark|high quality|3d render|blog|section|thumbnail)\b/gi, " ")
+      .replace(/\b(?:là gì|như thế nào|tại sao|vì sao|hướng dẫn chi tiết|toàn tập|từ a đến z|từ a-z|mới nhất|chi tiết nhất|phổ biến|thường gặp|thường mắc|cần biết|hiệu quả)\b/gi, " ")
+      .replace(/\b(?:professional|photo|illustration|representing|modern|clean|style|bright|studio|lighting|detailed|no text|no watermark|high quality|3d render|blog|section|thumbnail|cinematic|soft|natural|light|warm|golden|hour|dramatic|contrast|close-up|macro|minimalist|view)\b/gi, " ")
       .replace(/\s+/g, " ")
       .trim()
-      .substring(0, 120);
+      .substring(0, 100);
   }
 
   /**
-   * Check whether a candidate URL is suitable (no watermarked stock sites, no icons/SVGs, not excluded)
+   * Extract concise 4-5 word English visual query from AI image prompt for CC0/Royalty-Free stock search
    */
-  _isAcceptableImageCandidate(url, excludeUrls = null) {
+  _extractEnglishVisualKeywords(prompt) {
+    if (!prompt) return "";
+    const stopWords = new Set([
+      "a", "an", "the", "of", "in", "on", "at", "to", "for", "with", "by", "from", "and", "or",
+      "is", "are", "was", "were", "be", "been", "being", "that", "this", "these", "those",
+      "professional", "photo", "photograph", "illustration", "image", "picture", "representing",
+      "modern", "clean", "style", "bright", "studio", "lighting", "detailed", "text", "watermark",
+      "watermarks", "high", "quality", "render", "blog", "section", "thumbnail", "cinematic",
+      "soft", "natural", "light", "warm", "golden", "hour", "dramatic", "contrast", "close",
+      "up", "macro", "minimalist", "view", "showing", "featuring", "background", "concept",
+      "no", "without", "faces", "human", "logos", "logo", "sleek", "fresh", "vibrant"
+    ]);
+    const words = String(prompt)
+      .replace(/[^a-zA-Z0-9\s-]/g, " ")
+      .split(/\s+/)
+      .map(w => w.trim())
+      .filter(w => w.length > 2 && !stopWords.has(w.toLowerCase()));
+    return words.slice(0, 5).join(" ");
+  }
+
+  /**
+   * Check whether a candidate URL is suitable & copyright-safe
+   * Filters out watermarked stock sites, competitor blog uploads with logos, icons/SVGs, and already-used URLs
+   */
+  _isAcceptableImageCandidate(url, excludeUrls = null, options = {}) {
     if (!url || typeof url !== "string" || !/^https?:\/\//i.test(url)) return false;
     if (excludeUrls) {
       if (excludeUrls instanceof Set && excludeUrls.has(url)) return false;
@@ -422,24 +446,36 @@ class AiService {
     }
     const lower = url.toLowerCase();
     if (/\.(svg|gif|ico)(\?|$)/i.test(lower)) return false;
-    if (/(?:logo|icon|avatar|sprite|badge|banner-ad|placeholder|loading|favicon|emoji)/i.test(lower)) return false;
+    if (/(?:logo|icon|avatar|sprite|badge|banner-ad|placeholder|loading|favicon|emoji|watermark|copyright)/i.test(lower)) return false;
 
     const blockedDomains = [
       "shutterstock.com", "istockphoto.com", "gettyimages.com", "alamy.com",
       "123rf.com", "depositphotos.com", "dreamstime.com", "bigstockphoto.com",
       "vecteezy.com", "pngtree.com", "lovepik.com", "pikbest.com", "freepik.com",
       "canstockphoto.com", "envato.com", "graphicriver.net", "ftcdn.net",
-      "lookaside.fbsbx.com", "tiktokcdn.com"
+      "lookaside.fbsbx.com", "tiktokcdn.com", "pinterest.com", "pinimg.com"
     ];
     if (blockedDomains.some(d => lower.includes(d))) return false;
+
+    // Avoid competitor Vietnamese blog wp-content uploads (often contain competitor brand logos/watermarks)
+    if (options.strictCopyright !== false) {
+      try {
+        const host = new URL(url).hostname.toLowerCase();
+        if (host.endsWith(".vn") && lower.includes("/wp-content/uploads/")) {
+          return false;
+        }
+      } catch {}
+    }
+
     return true;
   }
 
   /**
-   * Search real topic-relevant images from Google Images, Bing Images, Serper, and Stock APIs
+   * Search copyright-free (CC0 / Public Domain / Creative Commons Commercial / Royalty-Free) topic images
+   * Sources: Openverse Commercial CC -> Wikimedia Commons -> Unsplash/Pexels/Pixabay -> Bing CC -> Google CC
    * @param {string} query - Topic / keyword / heading query
-   * @param {object} options - { apiKeys, excludeUrls, limit }
-   * @returns {Promise<Array<{url: string, thumbUrl: string, title: string, source: string, width: number, height: number}>>}
+   * @param {object} options - { apiKeys, excludeUrls, limit, strictCopyright }
+   * @returns {Promise<Array<{url: string, thumbUrl: string, title: string, source: string, license: string, width: number, height: number}>>}
    */
   async searchRealImages(query, options = {}) {
     const cleanQuery = this._cleanImageSearchQuery(query);
@@ -448,6 +484,7 @@ class AiService {
     const apiKeys = options.apiKeys || [];
     const excludeUrls = options.excludeUrls || null;
     const limit = options.limit || 20;
+    const strictCopyright = options.strictCopyright !== false;
     const results = [];
     const seenUrls = new Set();
 
@@ -455,13 +492,14 @@ class AiService {
       if (!item || !item.url) return;
       const normalizedUrl = item.url.trim();
       if (seenUrls.has(normalizedUrl)) return;
-      if (!this._isAcceptableImageCandidate(normalizedUrl, excludeUrls)) return;
+      if (!this._isAcceptableImageCandidate(normalizedUrl, excludeUrls, { strictCopyright })) return;
       seenUrls.add(normalizedUrl);
       results.push({
         url: normalizedUrl,
         thumbUrl: item.thumbUrl || normalizedUrl,
         title: item.title || cleanQuery,
-        source: item.source || "Web",
+        source: item.source || "CC0 / Free License",
+        license: item.license || "CC / Free Commercial",
         width: item.width || 800,
         height: item.height || 500,
       });
@@ -473,110 +511,33 @@ class AiService {
       "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
     };
 
-    // 1. Serper Google Images API (if configured)
-    const serperKey = apiKeys.find(k => k.provider === "serper" && k.active)?.apiKey || process.env.SERPER_API_KEY;
-    if (serperKey) {
-      try {
-        const resp = await axios.post(
-          "https://google.serper.dev/images",
-          { q: cleanQuery, gl: "vn", hl: "vi", num: 15 },
-          { headers: { "X-API-KEY": serperKey, "Content-Type": "application/json" }, timeout: 10000 }
-        );
-        for (const img of resp.data?.images || []) {
+    // 1. Openverse API (WordPress.org official Creative Commons / CC0 commercial-safe repository — NO key required)
+    try {
+      const ovUrl = `https://api.openverse.org/v1/images/?q=${encodeURIComponent(cleanQuery)}&license_type=commercial&page_size=12`;
+      const resp = await axios.get(ovUrl, { timeout: 8000, headers: { "User-Agent": "SPLSEO/2.0 (https://seo.splworks.com)" } });
+      for (const item of resp.data?.results || []) {
+        if (item?.url) {
           addCandidate({
-            url: img.imageUrl,
-            thumbUrl: img.thumbnailUrl || img.imageUrl,
-            title: img.title || cleanQuery,
-            source: img.domain || "Google Images",
-            width: img.imageWidth || 800,
-            height: img.imageHeight || 500,
+            url: item.url,
+            thumbUrl: item.thumbnail || item.url,
+            title: item.title || cleanQuery,
+            source: `Openverse (${(item.license || "CC0").toUpperCase()})`,
+            license: (item.license || "cc0").toUpperCase(),
+            width: item.width || 1200,
+            height: item.height || 630,
           });
         }
-      } catch (e) {
-        console.warn("[AI-ImageSearch] Serper Images error:", e.message);
       }
+    } catch (e) {
+      console.warn("[AI-ImageSearch] Openverse error:", e.message);
     }
 
-    // 2. Google Images Direct Search
-    if (results.length < limit) {
-      try {
-        const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(cleanQuery)}&tbm=isch&hl=vi&gl=vn&safe=active`;
-        const resp = await axios.get(googleUrl, { headers: browserHeaders, timeout: 10000 });
-        const html = String(resp.data || "")
-          .replace(/\\u003d/g, "=")
-          .replace(/\\u0026/g, "&")
-          .replace(/\\u003f/g, "?")
-          .replace(/\\\//g, "/");
-
-        // Match ["https://...", height, width] in Google AF_initDataCallback blocks
-        const regex = /\["(https?:\/\/[^"\s\\]+)",\s*(\d{3,4}),\s*(\d{3,4})\]/g;
-        let match;
-        while ((match = regex.exec(html)) !== null) {
-          const imgUrl = match[1];
-          const h = parseInt(match[2], 10);
-          const w = parseInt(match[3], 10);
-          if (w < 400 || h < 250) continue;
-          if (/gstatic\.com|google\.com|ggpht\.com|googleusercontent\.com\/a\//i.test(imgUrl)) continue;
-          let domain = "Google Images";
-          try { domain = new URL(imgUrl).hostname.replace(/^www\./, ""); } catch {}
-          addCandidate({
-            url: imgUrl,
-            thumbUrl: imgUrl,
-            title: cleanQuery,
-            source: domain,
-            width: w,
-            height: h,
-          });
-          if (results.length >= limit) break;
-        }
-      } catch (e) {
-        console.warn("[AI-ImageSearch] Google Direct error:", e.message);
-      }
-    }
-
-    // 3. Bing Images Async Search (provides both original murl and reliable turl proxy)
-    if (results.length < limit) {
-      try {
-        const bingUrl = `https://www.bing.com/images/async?q=${encodeURIComponent(cleanQuery)}&first=0&count=25&adlt=strict&mkt=vi-VN`;
-        const resp = await axios.get(bingUrl, { headers: browserHeaders, timeout: 10000 });
-        const html = String(resp.data || "");
-        const mRegex = /\bm="([^"]+)"/g;
-        let match;
-        while ((match = mRegex.exec(html)) !== null) {
-          try {
-            const decoded = match[1]
-              .replace(/&quot;/g, '"')
-              .replace(/&amp;/g, "&")
-              .replace(/&#39;/g, "'")
-              .replace(/&lt;/g, "<")
-              .replace(/&gt;/g, ">");
-            const meta = JSON.parse(decoded);
-            if (meta?.murl) {
-              let domain = "Bing Images";
-              try { domain = new URL(meta.murl).hostname.replace(/^www\./, ""); } catch {}
-              addCandidate({
-                url: meta.murl,
-                thumbUrl: meta.turl || meta.murl,
-                title: meta.t || cleanQuery,
-                source: domain,
-                width: 800,
-                height: 500,
-              });
-            }
-          } catch {}
-          if (results.length >= limit) break;
-        }
-      } catch (e) {
-        console.warn("[AI-ImageSearch] Bing Async error:", e.message);
-      }
-    }
-
-    // 4. Stock APIs (Unsplash / Pexels / Pixabay) if keys are available
+    // 2. Stock APIs (Unsplash / Pexels / Pixabay — 100% Royalty-Free Commercial) if keys are available
     const unsplashKey = apiKeys.find(k => k.provider === "unsplash" && k.active);
     if (unsplashKey && results.length < limit) {
       try {
         const resp = await axios.get("https://api.unsplash.com/search/photos", {
-          params: { query: cleanQuery, per_page: 6, orientation: "landscape", client_id: unsplashKey.apiKey },
+          params: { query: cleanQuery, per_page: 8, orientation: "landscape", client_id: unsplashKey.apiKey },
           timeout: 8000,
         });
         for (const item of resp.data?.results || []) {
@@ -585,7 +546,8 @@ class AiService {
               url: item.urls.regular,
               thumbUrl: item.urls.small || item.urls.regular,
               title: item.description || item.alt_description || cleanQuery,
-              source: "Unsplash",
+              source: "Unsplash (Free License)",
+              license: "Unsplash Free",
               width: item.width || 1200,
               height: item.height || 630,
             });
@@ -599,7 +561,7 @@ class AiService {
       try {
         const resp = await axios.get("https://api.pexels.com/v1/search", {
           headers: { Authorization: pexelsKey.apiKey },
-          params: { query: cleanQuery, per_page: 6, orientation: "landscape" },
+          params: { query: cleanQuery, per_page: 8, orientation: "landscape" },
           timeout: 8000,
         });
         for (const item of resp.data?.photos || []) {
@@ -608,13 +570,154 @@ class AiService {
               url: item.src.large,
               thumbUrl: item.src.medium || item.src.large,
               title: item.alt || cleanQuery,
-              source: "Pexels",
+              source: "Pexels (Free License)",
+              license: "Pexels Free",
               width: item.width || 1200,
               height: item.height || 630,
             });
           }
         }
       } catch {}
+    }
+
+    const pixabayKey = apiKeys.find(k => k.provider === "pixabay" && k.active);
+    if (pixabayKey && results.length < limit) {
+      try {
+        const resp = await axios.get("https://pixabay.com/api/", {
+          params: { key: pixabayKey.apiKey, q: cleanQuery, per_page: 8, image_type: "photo", orientation: "horizontal", safesearch: "true" },
+          timeout: 8000,
+        });
+        for (const item of resp.data?.hits || []) {
+          if (item?.largeImageURL) {
+            addCandidate({
+              url: item.largeImageURL,
+              thumbUrl: item.webformatURL || item.largeImageURL,
+              title: item.tags || cleanQuery,
+              source: "Pixabay (Free License)",
+              license: "Pixabay Free",
+              width: item.imageWidth || 1200,
+              height: item.imageHeight || 630,
+            });
+          }
+        }
+      } catch {}
+    }
+
+    // 3. Wikimedia Commons API (Public Domain & Creative Commons — NO key required)
+    if (results.length < limit) {
+      try {
+        const wmUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(`filetype:bitmap ${cleanQuery}`)}&gsrnamespace=6&gsrlimit=10&prop=imageinfo&iiprop=url|dimensions|mime&iiurlwidth=1200&format=json`;
+        const resp = await axios.get(wmUrl, { timeout: 8000, headers: { "User-Agent": "SPLSEO/2.0 (https://seo.splworks.com)" } });
+        const pages = Object.values(resp.data?.query?.pages || {});
+        for (const p of pages) {
+          const info = p?.imageinfo?.[0];
+          if (!info) continue;
+          const imgUrl = info.thumburl || info.url;
+          if (!imgUrl || (info.width && info.width < 400)) continue;
+          addCandidate({
+            url: imgUrl,
+            thumbUrl: info.thumburl || imgUrl,
+            title: (p.title || "").replace(/^File:/i, "").replace(/\.[^.]+$/, ""),
+            source: "Wikimedia Commons (CC)",
+            license: "Creative Commons",
+            width: info.thumbwidth || info.width || 1200,
+            height: info.thumbheight || info.height || 630,
+          });
+        }
+      } catch (e) {
+        console.warn("[AI-ImageSearch] Wikimedia error:", e.message);
+      }
+    }
+
+    // 4. Bing Images Async Search with Creative Commons / Free Commercial License filter (+filterui:license-L2_L3_L4)
+    if (results.length < limit) {
+      const bingUrls = [
+        `https://www.bing.com/images/async?q=${encodeURIComponent(cleanQuery)}&first=0&count=20&adlt=strict&mkt=vi-VN&qft=+filterui:license-L2_L3_L4+filterui:photo-photo`,
+        `https://www.bing.com/images/async?q=${encodeURIComponent(cleanQuery)}&first=0&count=20&adlt=strict&mkt=vi-VN&qft=+filterui:photo-photo`,
+      ];
+      for (const bingUrl of bingUrls) {
+        if (results.length >= limit) break;
+        const isCcFiltered = bingUrl.includes("license-L2_L3_L4");
+        try {
+          const resp = await axios.get(bingUrl, { headers: browserHeaders, timeout: 9000 });
+          const html = String(resp.data || "");
+          const mRegex = /\bm="([^"]+)"/g;
+          let match;
+          while ((match = mRegex.exec(html)) !== null) {
+            try {
+              const decoded = match[1]
+                .replace(/&quot;/g, '"')
+                .replace(/&amp;/g, "&")
+                .replace(/&#39;/g, "'")
+                .replace(/&lt;/g, "<")
+                .replace(/&gt;/g, ">");
+              const meta = JSON.parse(decoded);
+              if (meta?.murl) {
+                let domain = "Bing CC";
+                try { domain = new URL(meta.murl).hostname.replace(/^www\./, ""); } catch {}
+                addCandidate({
+                  url: meta.murl,
+                  thumbUrl: meta.turl || meta.murl,
+                  title: meta.t || cleanQuery,
+                  source: isCcFiltered ? `${domain} (CC Free)` : domain,
+                  license: isCcFiltered ? "Creative Commons" : "Web Editorial",
+                  width: 800,
+                  height: 500,
+                });
+              }
+            } catch {}
+            if (results.length >= limit) break;
+          }
+        } catch (e) {
+          console.warn("[AI-ImageSearch] Bing Async error:", e.message);
+        }
+        if (results.length >= 6) break;
+      }
+    }
+
+    // 5. Google Images Direct Search with Creative Commons filter (tbs=il:cl)
+    if (results.length < limit) {
+      const googleUrls = [
+        `https://www.google.com/search?q=${encodeURIComponent(cleanQuery)}&tbm=isch&tbs=il:cl&hl=vi&gl=vn&safe=active`,
+        `https://www.google.com/search?q=${encodeURIComponent(cleanQuery)}&tbm=isch&hl=vi&gl=vn&safe=active`,
+      ];
+      for (const googleUrl of googleUrls) {
+        if (results.length >= limit) break;
+        const isCcFiltered = googleUrl.includes("tbs=il:cl");
+        try {
+          const resp = await axios.get(googleUrl, { headers: browserHeaders, timeout: 9000 });
+          const html = String(resp.data || "")
+            .replace(/\\u003d/g, "=")
+            .replace(/\\u0026/g, "&")
+            .replace(/\\u003f/g, "?")
+            .replace(/\\\//g, "/");
+
+          const regex = /\["(https?:\/\/[^"\s\\]+)",\s*(\d{3,4}),\s*(\d{3,4})\]/g;
+          let match;
+          while ((match = regex.exec(html)) !== null) {
+            const imgUrl = match[1];
+            const h = parseInt(match[2], 10);
+            const w = parseInt(match[3], 10);
+            if (w < 400 || h < 250) continue;
+            if (/gstatic\.com|google\.com|ggpht\.com|googleusercontent\.com\/a\//i.test(imgUrl)) continue;
+            let domain = "Google CC";
+            try { domain = new URL(imgUrl).hostname.replace(/^www\./, ""); } catch {}
+            addCandidate({
+              url: imgUrl,
+              thumbUrl: imgUrl,
+              title: cleanQuery,
+              source: isCcFiltered ? `${domain} (CC Free)` : domain,
+              license: isCcFiltered ? "Creative Commons" : "Web Editorial",
+              width: w,
+              height: h,
+            });
+            if (results.length >= limit) break;
+          }
+        } catch (e) {
+          console.warn("[AI-ImageSearch] Google Direct error:", e.message);
+        }
+        if (results.length >= 6) break;
+      }
     }
 
     return results.slice(0, limit);
@@ -1321,15 +1424,16 @@ class AiService {
       }
     }
 
-    // ===== 4. Real Topic Images — Google Images / Bing Images / Serper =====
-    // Prioritizes Vietnamese topic/section queries (options.searchQuery -> options.fallbackQuery -> prompt)
+    // ===== 4. Copyright-Free Topic Images — Openverse CC0 / Wikimedia / Bing CC / Google CC =====
     const recordUsedUrl = (u) => {
       if (!u || !options.excludeUrls) return;
       if (options.excludeUrls instanceof Set) options.excludeUrls.add(u);
       else if (Array.isArray(options.excludeUrls) && !options.excludeUrls.includes(u)) options.excludeUrls.push(u);
     };
 
+    const englishVisualQuery = this._extractEnglishVisualKeywords(prompt);
     const rawQueries = [
+      englishVisualQuery,
       options.searchQuery,
       options.fallbackQuery,
       this._cleanImageSearchQuery(prompt),
@@ -1339,10 +1443,11 @@ class AiService {
 
     for (const q of uniqueQueries) {
       try {
-        console.log(`[AI-Image] 🔍 Searching Google/Bing Images for topic: "${q}"...`);
+        console.log(`[AI-Image] 🔍 Auto-searching Copyright-Free Images for: "${q}"...`);
         const candidates = await this.searchRealImages(q, {
           apiKeys,
           excludeUrls: options.excludeUrls,
+          strictCopyright: true,
           limit: 12,
         });
 
@@ -1351,7 +1456,7 @@ class AiService {
             const savedLocalUrl = await this.downloadAndStoreImage(cand.url, "google", cand.thumbUrl);
             recordUsedUrl(cand.url);
             if (cand.thumbUrl) recordUsedUrl(cand.thumbUrl);
-            console.log(`[AI-Image] ✅ Google/Web Image success (${cand.source}) → ${savedLocalUrl}`);
+            console.log(`[AI-Image] ✅ Auto-attached Copyright-Free Image (${cand.source}) → ${savedLocalUrl}`);
             return savedLocalUrl;
           } catch (dlErr) {
             // Try next candidate if hotlink-blocked or invalid
@@ -1359,7 +1464,7 @@ class AiService {
           }
         }
       } catch (searchErr) {
-        errors.push(`GoogleSearch("${q}"): ${searchErr.message}`);
+        errors.push(`FreeImageSearch("${q}"): ${searchErr.message}`);
         console.warn(`[AI-Image] Search failed for "${q}":`, searchErr.message);
       }
     }

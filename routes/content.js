@@ -1297,7 +1297,78 @@ ${draft.customPrompt ? `📝 HƯỚNG DẪN BỔ SUNG: ${draft.customPrompt}` : 
       .replace(/\n\n/g, "</p><p>")
       .replace(/\n/g, "<br/>") + "</p>";
 
+    let updatedThumbnail = draft.pipeline?.thumbnail;
     let updatedSections = draft.pipeline?.sections;
+    const usedImageUrls = new Set();
+    if (updatedThumbnail?.url) usedImageUrls.add(updatedThumbnail.url);
+
+    // Auto-find & attach Copyright-Free Thumbnail + Section Images when writing content
+    if (req.body.autoImages !== false) {
+      const articleTitle = outline.title || keyword;
+
+      // 1. Auto Thumbnail if missing
+      if (!updatedThumbnail?.url) {
+        try {
+          const thumbPrompt = `Professional photo representing "${articleTitle}", modern clean style, bright lighting, no text`;
+          const thumbUrl = await aiService.generateImage(thumbPrompt, settings, {
+            width: 1200,
+            height: 630,
+            apiKeys,
+            imageType: "thumbnail",
+            searchQuery: `${keyword} ${articleTitle}`,
+            fallbackQuery: keyword,
+            excludeUrls: usedImageUrls,
+          });
+          if (thumbUrl) {
+            usedImageUrls.add(thumbUrl);
+            updatedThumbnail = { status: "done", url: thumbUrl, prompt: thumbPrompt };
+          }
+        } catch (e) {
+          console.warn("[Draft-Content] Auto-thumbnail skipped:", e.message);
+        }
+      }
+
+      // 2. Auto Section Images if missing
+      if (!updatedSections?.images?.some(i => i.status === "done" && i.url)) {
+        try {
+          let h2List = (outline.outline || []).filter(s => s.tag === "h2").map(s => s.text);
+          if (h2List.length === 0) {
+            h2List = (html.match(/<h2[^>]*>([\s\S]*?)<\/h2>/gi) || [])
+              .map(h => h.replace(/<[^>]*>/g, "").trim())
+              .filter(Boolean);
+          }
+          const selectedH2s = h2List.length > 4
+            ? [h2List[0], h2List[Math.floor(h2List.length / 2)], h2List[h2List.length - 1]]
+            : h2List.slice(0, 3);
+
+          const autoImgs = [];
+          for (const h2Text of selectedH2s) {
+            try {
+              const sp = `Professional illustration of ${h2Text}, modern clean style, bright lighting, no text`;
+              const url = await aiService.generateImage(sp, settings, {
+                width: 800,
+                height: 500,
+                apiKeys,
+                imageType: "section",
+                searchQuery: `${keyword} ${h2Text}`,
+                fallbackQuery: keyword,
+                excludeUrls: usedImageUrls,
+              });
+              if (url) usedImageUrls.add(url);
+              autoImgs.push({ sectionHeading: h2Text, status: "done", url, prompt: sp });
+            } catch (e) {
+              autoImgs.push({ sectionHeading: h2Text, status: "failed", error: e.message });
+            }
+          }
+          if (autoImgs.length > 0) {
+            updatedSections = { status: "done", images: autoImgs, insertedIntoContent: false };
+          }
+        } catch (e) {
+          console.warn("[Draft-Content] Auto-section-images skipped:", e.message);
+        }
+      }
+    }
+
     if (updatedSections?.images?.length > 0) {
       const { html: htmlWithImgs, insertedCount } = insertSectionImagesIntoHtml(html, updatedSections.images, keyword);
       if (insertedCount > 0) {
@@ -1314,6 +1385,7 @@ ${draft.customPrompt ? `📝 HƯỚNG DẪN BỔ SUNG: ${draft.customPrompt}` : 
       pipeline: {
         ...draft.pipeline,
         content: { html, raw, wordCount, mode, targetWordCount },
+        ...(updatedThumbnail ? { thumbnail: updatedThumbnail } : {}),
         ...(updatedSections ? { sections: updatedSections } : {}),
         quality,
         autoStep: null,
@@ -1323,7 +1395,7 @@ ${draft.customPrompt ? `📝 HƯỚNG DẪN BỔ SUNG: ${draft.customPrompt}` : 
     });
 
     console.log(`[Draft-Content] ${keyword}: Done (${wordCount} words, ${mode} mode, QC: ${quality.score}/100)`);
-    res.json({ success: true, data: { html, wordCount, mode }, quality });
+    res.json({ success: true, data: { html, wordCount, mode }, thumbnail: updatedThumbnail, sections: updatedSections, quality });
   } catch (error) {
     console.error("[Draft-Content] Error:", error.message);
     const draft = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
@@ -1505,6 +1577,112 @@ Return ONLY the prompt.`,
     res.json({ success: true, images: sectionImages, insertedIntoContent });
   } catch (error) {
     console.error("[Draft-SectionImages] Error:", error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST 1-click auto-find & attach Copyright-Free Thumbnail + Section Images into draft HTML
+router.post("/drafts/:id/auto-attach-images", async (req, res) => {
+  try {
+    const draft = await storage.getByIdForUser("standalone-drafts", req.params.id, req.userId);
+    if (!draft) return res.status(404).json({ error: "Draft not found" });
+
+    const settings = await storage.getSettings();
+    const apiKeys = await resolveApiKeys(req.userId, req.license);
+    const keyword = draft.keyword || "";
+    const outline = draft.pipeline?.outline || {};
+    const articleTitle = outline.title || keyword;
+    const usedImageUrls = new Set();
+
+    // 1. Auto-find Copyright-Free Thumbnail
+    let updatedThumbnail = draft.pipeline?.thumbnail || {};
+    try {
+      const thumbPrompt = `Professional photo representing "${articleTitle}", modern clean style, bright lighting, no text`;
+      const thumbUrl = await aiService.generateImage(thumbPrompt, settings, {
+        width: 1200,
+        height: 630,
+        apiKeys,
+        imageType: "thumbnail",
+        searchQuery: `${keyword} ${articleTitle}`,
+        fallbackQuery: keyword,
+        excludeUrls: usedImageUrls,
+      });
+      if (thumbUrl) {
+        usedImageUrls.add(thumbUrl);
+        updatedThumbnail = { status: "done", url: thumbUrl, prompt: "Auto Copyright-Free Image" };
+      }
+    } catch (e) {
+      console.warn("[Draft-AutoAttachImages] Thumbnail error:", e.message);
+    }
+
+    // 2. Auto-find Copyright-Free Section Images
+    let h2List = (outline.outline || []).filter(s => s.tag === "h2").map(s => s.text);
+    const currentHtml = draft.pipeline?.content?.html || "";
+    if (h2List.length === 0 && currentHtml) {
+      h2List = (currentHtml.match(/<h2[^>]*>([\s\S]*?)<\/h2>/gi) || [])
+        .map(h => h.replace(/<[^>]*>/g, "").trim())
+        .filter(Boolean);
+    }
+    const selectedH2s = h2List.length > 4
+      ? [h2List[0], h2List[Math.floor(h2List.length / 2)], h2List[h2List.length - 1]]
+      : h2List.slice(0, 3);
+
+    const sectionImages = [];
+    for (const h2Text of selectedH2s) {
+      try {
+        const sp = `Professional illustration of ${h2Text}, modern clean style, bright lighting, no text`;
+        const url = await aiService.generateImage(sp, settings, {
+          width: 800,
+          height: 500,
+          apiKeys,
+          imageType: "section",
+          searchQuery: `${keyword} ${h2Text}`,
+          fallbackQuery: keyword,
+          excludeUrls: usedImageUrls,
+        });
+        if (url) usedImageUrls.add(url);
+        sectionImages.push({ sectionHeading: h2Text, status: "done", url, prompt: "Auto Copyright-Free Image" });
+      } catch (e) {
+        sectionImages.push({ sectionHeading: h2Text, status: "failed", error: e.message });
+      }
+    }
+
+    // 3. Auto-embed into article HTML
+    let updatedContent = draft.pipeline?.content;
+    let updatedQuality = draft.pipeline?.quality;
+    let insertedIntoContent = false;
+    let insertedCount = 0;
+    if (updatedContent?.html && sectionImages.length > 0) {
+      const resInsert = insertSectionImagesIntoHtml(updatedContent.html, sectionImages, keyword);
+      insertedCount = resInsert.insertedCount;
+      if (insertedCount > 0) {
+        const wordCount = resInsert.html.replace(/<[^>]*>/g, "").split(/\s+/).filter(Boolean).length;
+        updatedContent = { ...updatedContent, html: resInsert.html, wordCount };
+        updatedQuality = validateArticle(resInsert.html, articleTitle, "guide", { keyword });
+        insertedIntoContent = true;
+      }
+    }
+
+    await storage.update("standalone-drafts", req.params.id, {
+      pipeline: {
+        ...draft.pipeline,
+        thumbnail: updatedThumbnail,
+        ...(updatedContent ? { content: updatedContent } : {}),
+        ...(updatedQuality ? { quality: updatedQuality } : {}),
+        sections: { status: "done", images: sectionImages, insertedIntoContent },
+      },
+      updatedAt: new Date().toISOString(),
+    });
+
+    res.json({
+      success: true,
+      thumbnail: updatedThumbnail,
+      images: sectionImages,
+      insertedIntoContent,
+      insertedCount,
+    });
+  } catch (error) {
+    console.error("[Draft-AutoAttachImages] Error:", error.message);
     res.status(500).json({ error: error.message });
   }
 });

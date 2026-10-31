@@ -2163,6 +2163,136 @@ router.put("/:projectId/articles/:articleId/section-image/:index", async (req, r
   }
 });
 
+// POST 1-click auto-find & attach Copyright-Free Thumbnail + Section Images into project article HTML
+router.post("/:projectId/articles/:articleId/auto-attach-images", async (req, res) => {
+  try {
+    const article = await storage.getByIdForUser("articles", req.params.articleId, req.userId);
+    if (!article) return res.status(404).json({ error: "Article not found" });
+
+    const settings = await storage.getSettings();
+    const apiKeys = await resolveApiKeys(req.userId, req.license);
+    const aiService = require("../services/ai-service");
+
+    const keyword = article.keyword || article.title || "";
+    const outline = article.pipeline?.outline?.data || {};
+    const research = article.pipeline?.research?.data || {};
+    const articleTitle = outline.title || research.suggestedTitle || article.title || keyword;
+    const usedImageUrls = new Set();
+
+    // 1. Auto-find Copyright-Free Thumbnail
+    let updatedThumbnail = article.pipeline?.thumbnail || {};
+    try {
+      const thumbPrompt = `Professional photo representing "${articleTitle}", modern clean design, bright lighting, no text`;
+      const thumbUrl = await aiService.generateImage(thumbPrompt, settings, {
+        width: 1200,
+        height: 630,
+        apiKeys,
+        imageType: "thumbnail",
+        searchQuery: `${keyword} ${articleTitle}`,
+        fallbackQuery: keyword,
+        excludeUrls: usedImageUrls,
+      });
+      if (thumbUrl) {
+        usedImageUrls.add(thumbUrl);
+        updatedThumbnail = { status: "done", url: thumbUrl, prompt: "Auto Copyright-Free Image" };
+      }
+    } catch (e) {
+      console.warn("[Article-AutoAttachImages] Thumbnail error:", e.message);
+    }
+
+    // 2. Auto-find Copyright-Free Section Images
+    let h2List = (outline.sections || []).map(s => s.heading).filter(Boolean);
+    const currentHtml = article.pipeline?.content?.data?.html || "";
+    if (h2List.length === 0 && currentHtml) {
+      h2List = (currentHtml.match(/<h2[^>]*>([\s\S]*?)<\/h2>/gi) || [])
+        .map(h => h.replace(/<[^>]*>/g, "").trim())
+        .filter(Boolean);
+    }
+    const selectedH2s = h2List.length > 4
+      ? [h2List[0], h2List[Math.floor(h2List.length / 2)], h2List[h2List.length - 1]]
+      : h2List.slice(0, 3);
+
+    const sectionImages = [];
+    for (const h2Text of selectedH2s) {
+      try {
+        const sp = `Professional illustration of ${h2Text.replace(/^H[23]:\s*/i, "")}, clean modern style, bright lighting, no text`;
+        const url = await aiService.generateImage(sp, settings, {
+          width: 800,
+          height: 450,
+          apiKeys,
+          imageType: "section",
+          searchQuery: `${keyword} ${h2Text}`,
+          fallbackQuery: keyword,
+          excludeUrls: usedImageUrls,
+        });
+        if (url) usedImageUrls.add(url);
+        sectionImages.push({
+          sectionHeading: h2Text,
+          prompt: "Auto Copyright-Free Image",
+          url,
+          status: "done",
+        });
+      } catch (e) {
+        sectionImages.push({
+          sectionHeading: h2Text,
+          prompt: null,
+          url: null,
+          status: "failed",
+          error: e.message,
+        });
+      }
+    }
+
+    // 3. Auto-embed into article HTML & re-validate QC
+    let updatedContentNode = article.pipeline?.content;
+    let updatedQuality = article.pipeline?.quality;
+    let insertedIntoContent = false;
+    let insertedCount = 0;
+    if (updatedContentNode?.data?.html && sectionImages.length > 0) {
+      const resInsert = insertProjectSectionImagesIntoHtml(
+        updatedContentNode.data.html,
+        sectionImages,
+        keyword
+      );
+      insertedCount = resInsert.insertedCount;
+      if (insertedCount > 0) {
+        updatedContentNode = {
+          ...updatedContentNode,
+          data: { ...updatedContentNode.data, html: resInsert.html },
+        };
+        updatedQuality = validateArticle(resInsert.html, articleTitle, article.contentAngle || "guide", { keyword });
+        insertedIntoContent = true;
+      }
+    }
+
+    await storage.update("articles", req.params.articleId, {
+      pipeline: {
+        ...article.pipeline,
+        thumbnail: updatedThumbnail,
+        ...(updatedContentNode ? { content: updatedContentNode } : {}),
+        ...(updatedQuality ? { quality: updatedQuality } : {}),
+        sections: {
+          status: "done",
+          images: sectionImages,
+          insertedIntoContent,
+          generatedAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    res.json({
+      success: true,
+      thumbnail: updatedThumbnail,
+      images: sectionImages,
+      insertedIntoContent,
+      insertedCount,
+    });
+  } catch (error) {
+    console.error("[Article-AutoAttachImages] Error:", error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ===== AI PIPELINE ENDPOINTS =====
 
 // POST generate research for article
@@ -2708,8 +2838,94 @@ ${CREATIVE_RULES}`;
       }
     }
 
-    // Strip leftover [IMG: ...] placeholders and auto-insert existing section images if available
+    // Auto-find & attach Copyright-Free Thumbnail + Section Images when generating article content
+    const articleTitle = outline.title || article.title || keyword;
+    let updatedThumbnail = article.pipeline?.thumbnail;
     let updatedSections = article.pipeline?.sections;
+    const usedImageUrls = new Set();
+    if (updatedThumbnail?.url) usedImageUrls.add(updatedThumbnail.url);
+
+    if (req.body.autoImages !== false) {
+      // 1. Auto Thumbnail if missing
+      if (!updatedThumbnail?.url) {
+        try {
+          const thumbPrompt = `Professional photo representing "${articleTitle}", modern clean design, bright lighting, no text`;
+          const thumbUrl = await aiService.generateImage(thumbPrompt, settings, {
+            width: 1200,
+            height: 630,
+            apiKeys,
+            imageType: "thumbnail",
+            searchQuery: `${keyword} ${articleTitle}`,
+            fallbackQuery: keyword,
+            excludeUrls: usedImageUrls,
+          });
+          if (thumbUrl) {
+            usedImageUrls.add(thumbUrl);
+            updatedThumbnail = { status: "done", url: thumbUrl, prompt: "Auto Copyright-Free Image" };
+          }
+        } catch (e) {
+          console.warn("[Project-Content] Auto-thumbnail skipped:", e.message);
+        }
+      }
+
+      // 2. Auto Section Images if missing
+      if (!updatedSections?.images?.some(i => i.status === "done" && i.url)) {
+        try {
+          let h2List = (outline.sections || []).map(s => s.heading).filter(Boolean);
+          if (h2List.length === 0) {
+            h2List = (htmlContent.match(/<h2[^>]*>([\s\S]*?)<\/h2>/gi) || [])
+              .map(h => h.replace(/<[^>]*>/g, "").trim())
+              .filter(Boolean);
+          }
+          const selectedH2s = h2List.length > 4
+            ? [h2List[0], h2List[Math.floor(h2List.length / 2)], h2List[h2List.length - 1]]
+            : h2List.slice(0, 3);
+
+          const autoImgs = [];
+          for (const h2Text of selectedH2s) {
+            try {
+              const sp = `Professional illustration of ${h2Text.replace(/^H[23]:\s*/i, "")}, clean modern style, bright lighting, no text`;
+              const url = await aiService.generateImage(sp, settings, {
+                width: 800,
+                height: 450,
+                apiKeys,
+                imageType: "section",
+                searchQuery: `${keyword} ${h2Text}`,
+                fallbackQuery: keyword,
+                excludeUrls: usedImageUrls,
+              });
+              if (url) usedImageUrls.add(url);
+              autoImgs.push({
+                sectionHeading: h2Text,
+                prompt: "Auto Copyright-Free Image",
+                url,
+                status: "done",
+              });
+            } catch (e) {
+              autoImgs.push({
+                sectionHeading: h2Text,
+                prompt: null,
+                url: null,
+                status: "failed",
+                error: e.message,
+              });
+            }
+          }
+          if (autoImgs.length > 0) {
+            updatedSections = {
+              status: "done",
+              images: autoImgs,
+              insertedIntoContent: false,
+              generatedAt: new Date().toISOString(),
+            };
+          }
+        } catch (e) {
+          console.warn("[Project-Content] Auto-section-images skipped:", e.message);
+        }
+      }
+    }
+
+    // Strip leftover [IMG: ...] placeholders and auto-insert section images
     if (updatedSections?.images?.length > 0) {
       const { html: htmlWithImages, insertedCount } = insertProjectSectionImagesIntoHtml(
         htmlContent,
@@ -2738,7 +2954,6 @@ ${CREATIVE_RULES}`;
     };
 
     // Auto-validate content quality
-    const articleTitle = outline.title || article.title || keyword;
     const qualityResult = validateArticle(htmlContent, articleTitle, article.contentAngle || "guide", { keyword });
     console.log(`[Content-${mode}] ${wordCount} words, QC: ${qualityResult.score}/100, Passed: ${qualityResult.passed}`);
 
@@ -2746,6 +2961,7 @@ ${CREATIVE_RULES}`;
       pipeline: {
         ...article.pipeline,
         content: { status: "done", data: contentData },
+        ...(updatedThumbnail ? { thumbnail: updatedThumbnail } : {}),
         ...(updatedSections ? { sections: updatedSections } : {}),
         quality: qualityResult,
       },
