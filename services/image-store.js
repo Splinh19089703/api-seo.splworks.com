@@ -11,18 +11,44 @@ const crypto = require('crypto');
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'images');
 const MAX_FILE_AGE_DAYS = 30; // Xóa file cũ hơn 30 ngày
 
-// Đảm bảo thư mục uploads tồn tại
+// Đảm bảo thư mục uploads tồn tại (và tạo symlink api/uploads -> ../uploads cho Nginx static root)
 function ensureUploadsDir() {
   if (!fs.existsSync(UPLOADS_DIR)) {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
   }
+  try {
+    const apiDir = path.join(__dirname, '..', 'api');
+    const apiUploadsLink = path.join(apiDir, 'uploads');
+    const targetUploadsDir = path.join(__dirname, '..', 'uploads');
+    if (!fs.existsSync(apiDir)) {
+      fs.mkdirSync(apiDir, { recursive: true });
+    }
+    if (!fs.existsSync(apiUploadsLink)) {
+      fs.symlinkSync(targetUploadsDir, apiUploadsLink, 'junction');
+    }
+  } catch {}
+}
+
+function getPublicApiOrigin() {
+  if (process.env.PUBLIC_API_URL) {
+    return process.env.PUBLIC_API_URL.replace(/\/api\/?$/, '').replace(/\/$/, '');
+  }
+  if (process.env.ALLOWED_ORIGINS && process.env.ALLOWED_ORIGINS.includes('splworks.com')) {
+    return 'https://api-seo.splworks.com';
+  }
+  return '';
+}
+
+function extractRelativeUploadPath(url) {
+  if (!url || typeof url !== 'string') return '';
+  return url.replace(/^https?:\/\/[^/]+/i, '');
 }
 
 /**
  * Lưu base64 data URI → file local
  * @param {string} dataUri - "data:image/png;base64,..." hoặc plain base64
  * @param {string} [prefix] - prefix cho tên file (vd: "thumb", "section")
- * @returns {string} URL ngắn: "/api/uploads/images/{uuid}.webp"
+ * @returns {string} URL ngắn: "/api/uploads/images/{uuid}.webp" (hoặc full URL trên production)
  */
 function saveBase64ToFile(dataUri, prefix = 'img') {
   ensureUploadsDir();
@@ -52,7 +78,8 @@ function saveBase64ToFile(dataUri, prefix = 'img') {
 
   fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
 
-  return `/api/uploads/images/${filename}`;
+  const origin = getPublicApiOrigin();
+  return `${origin}/api/uploads/images/${filename}`;
 }
 
 /**
@@ -89,8 +116,9 @@ function normalizeImageUrl(urlOrBase64, prefix = 'img') {
  * @param {string} url - "/api/uploads/images/xxx.jpg"
  */
 function deleteImageFile(url) {
-  if (!url || !url.startsWith('/api/uploads/images/')) return;
-  const filename = path.basename(url);
+  const rel = extractRelativeUploadPath(url);
+  if (!rel || !rel.startsWith('/api/uploads/images/')) return;
+  const filename = path.basename(rel);
   const filePath = path.join(UPLOADS_DIR, filename);
   try {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
@@ -127,8 +155,9 @@ function cleanupOldFiles() {
  * @returns {string|null} absolute file path
  */
 function getFilePath(url) {
-  if (!url || !url.startsWith('/api/uploads/images/')) return null;
-  const filename = path.basename(url);
+  const rel = extractRelativeUploadPath(url);
+  if (!rel || !rel.startsWith('/api/uploads/images/')) return null;
+  const filename = path.basename(rel);
   const filePath = path.join(UPLOADS_DIR, filename);
   return fs.existsSync(filePath) ? filePath : null;
 }
