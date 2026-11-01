@@ -1,4 +1,26 @@
 const API_BASE = import.meta.env.VITE_API_BASE || "/api";
+const API_ORIGIN = API_BASE.startsWith("http") ? API_BASE.replace(/\/api\/?$/, "") : "";
+
+function rewriteUploadImageUrls(data) {
+  if (!API_ORIGIN || !data) return data;
+  if (typeof data === "string") {
+    if (!data.includes("/api/uploads/images/")) return data;
+    return data
+      .replace(/^\/api\/uploads\/images\//, `${API_ORIGIN}/api/uploads/images/`)
+      .replace(/(src=["'])\/api\/uploads\/images\//gi, `$1${API_ORIGIN}/api/uploads/images/`);
+  }
+  if (Array.isArray(data)) {
+    return data.map(rewriteUploadImageUrls);
+  }
+  if (typeof data === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(data)) {
+      out[k] = rewriteUploadImageUrls(v);
+    }
+    return out;
+  }
+  return data;
+}
 
 /**
  * Get auth token from localStorage
@@ -76,7 +98,8 @@ async function fetchApi(endpoint, options = {}) {
         .catch(() => ({ error: `Server error (HTTP ${response.status})` }));
       throw new Error(error.error || "Request failed");
     }
-    return response.json();
+    const jsonData = await response.json();
+    return rewriteUploadImageUrls(jsonData);
   } catch (e) {
     clearTimeout(timeoutId);
     if (e.name === "AbortError") {
