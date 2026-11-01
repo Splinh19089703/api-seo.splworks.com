@@ -401,21 +401,27 @@ class AiService {
     if (!rawQuery) return "";
     return String(rawQuery)
       .replace(/<[^>]*>/g, " ")
+      .replace(/\(\s*[\d.,]+\s*\)/g, " ")
+      .replace(/\[\s*[\d.,]+\s*\]/g, " ")
+      .replace(/^[\s\-–—•*:+]+/, "")
       .replace(/^(?:phần|chương|bước|mục|top)\s*\d+[:.\s-]*/i, "")
       .replace(/^(?:[IVXLC]+|\d+(?:\.\d+)*)[:.)\s-]+/i, "")
       .replace(/["'“”‘’`#*~_[\](){}]/g, " ")
       .replace(/\b(?:là gì|như thế nào|tại sao|vì sao|hướng dẫn chi tiết|toàn tập|từ a đến z|từ a-z|mới nhất|chi tiết nhất|phổ biến|thường gặp|thường mắc|cần biết|hiệu quả)\b/gi, " ")
       .replace(/\b(?:professional|photo|illustration|representing|modern|clean|style|bright|studio|lighting|detailed|no text|no watermark|high quality|3d render|blog|section|thumbnail|cinematic|soft|natural|light|warm|golden|hour|dramatic|contrast|close-up|macro|minimalist|view)\b/gi, " ")
+      .replace(/^[\s\-–—•*:+]+/, "")
       .replace(/\s+/g, " ")
       .trim()
       .substring(0, 100);
   }
 
   /**
-   * Extract concise 4-5 word English visual query from AI image prompt for CC0/Royalty-Free stock search
+   * Extract concise 4-5 word English visual query from AI image prompt or Vietnamese topic for CC0/Royalty-Free stock search
    */
-  _extractEnglishVisualKeywords(prompt) {
-    if (!prompt) return "";
+  _extractEnglishVisualKeywords(prompt, extraContext = "") {
+    const combined = `${prompt || ""} ${extraContext || ""}`;
+    if (!combined.trim()) return "";
+
     const stopWords = new Set([
       "a", "an", "the", "of", "in", "on", "at", "to", "for", "with", "by", "from", "and", "or",
       "is", "are", "was", "were", "be", "been", "being", "that", "this", "these", "those",
@@ -426,12 +432,52 @@ class AiService {
       "up", "macro", "minimalist", "view", "showing", "featuring", "background", "concept",
       "no", "without", "faces", "human", "logos", "logo", "sleek", "fresh", "vibrant"
     ]);
-    const words = String(prompt)
-      .replace(/[^a-zA-Z0-9\s-]/g, " ")
+
+    // Only keep pure ASCII words that are not fragments of accented Vietnamese words
+    const asciiWords = String(prompt || "")
+      .replace(/[",.;:!?()[\]{}/\\|-]/g, " ")
       .split(/\s+/)
       .map(w => w.trim())
-      .filter(w => w.length > 2 && !stopWords.has(w.toLowerCase()));
-    return words.slice(0, 5).join(" ");
+      .filter(w => /^[a-zA-Z]{3,}$/.test(w) && !stopWords.has(w.toLowerCase()));
+
+    // Map Vietnamese topics/headings to concrete English visual keywords for Openverse/Wikimedia CC0 search
+    const lower = combined.toLowerCase();
+    const mappedVisuals = [];
+    const topicRules = [
+      { re: /thiết kế web|lập trình web|website|trang web|giao diện|landing page|wordpress/i, kw: "web design laptop workspace" },
+      { re: /\bseo\b|từ khóa|lên top|search console|backlink|traffic|thứ hạng/i, kw: "seo analytics dashboard laptop" },
+      { re: /chi phí|báo giá|bảng giá|ngân sách|đầu tư|tiết kiệm|giá rẻ/i, kw: "business finance planning laptop" },
+      { re: /tốc độ|hiệu năng|tối ưu|bảo mật|hosting|server|máy chủ|tên miền|domain/i, kw: "server technology code monitor" },
+      { re: /thương mại điện tử|bán hàng|giỏ hàng|thanh toán|cửa hàng|shop online/i, kw: "ecommerce online shopping laptop" },
+      { re: /marketing|quảng cáo|thương hiệu|chiến lược|khách hàng|chuyển đổi/i, kw: "digital marketing analytics office" },
+      { re: /doanh nghiệp|công ty|đối tác|quy trình|tư vấn|dịch vụ|chuyên nghiệp/i, kw: "modern business office team" },
+      { re: /du lịch|khách sạn|resort|homestay|lữ hành|tour/i, kw: "travel resort hotel architecture" },
+      { re: /hội an/i, kw: "Hoi An Vietnam lantern architecture" },
+      { re: /đà nẵng/i, kw: "Da Nang Vietnam city bridge" },
+      { re: /nhà hàng|ẩm thực|quán ăn|cafe|cà phê|món ăn/i, kw: "modern restaurant food cafe" },
+      { re: /bất động sản|nhà đất|căn hộ|chung cư|biệt thự/i, kw: "modern real estate building architecture" },
+      { re: /nội thất|kiến trúc|xây dựng|thi công|nhà ở/i, kw: "modern interior design architecture" },
+      { re: /nha khoa|y tế|phòng khám|bệnh viện|sức khỏe|bác sĩ/i, kw: "modern medical clinic healthcare" },
+      { re: /thẩm mỹ|spa|làm đẹp|mỹ phẩm|chăm sóc da/i, kw: "beauty spa skincare wellness" },
+      { re: /giáo dục|đào tạo|khóa học|học viện|sinh viên/i, kw: "education learning classroom laptop" },
+      { re: /phần mềm|\bai\b|trí tuệ nhân tạo|công nghệ|chuyển đổi số|ứng dụng|mobile app/i, kw: "software technology coding workspace" },
+    ];
+
+    for (const rule of topicRules) {
+      if (rule.re.test(lower)) {
+        mappedVisuals.push(rule.kw);
+      }
+    }
+
+    if (asciiWords.length >= 2) {
+      return [...asciiWords.slice(0, 4), ...(mappedVisuals[0] ? mappedVisuals[0].split(" ").slice(0, 2) : [])].slice(0, 5).join(" ");
+    }
+    if (mappedVisuals.length > 0) {
+      // Combine up to 2 matched rules so different H2 sections get distinct visual queries
+      const words = [...new Set(mappedVisuals.slice(0, 2).join(" ").split(/\s+/))];
+      return words.slice(0, 5).join(" ");
+    }
+    return asciiWords.slice(0, 5).join(" ") || "modern business technology laptop workspace";
   }
 
   /**
@@ -484,6 +530,7 @@ class AiService {
     const apiKeys = options.apiKeys || [];
     const excludeUrls = options.excludeUrls || null;
     const limit = options.limit || 20;
+    const minResults = options.minResults || Math.min(limit, 10);
     const strictCopyright = options.strictCopyright !== false;
     const results = [];
     const seenUrls = new Set();
@@ -604,7 +651,7 @@ class AiService {
     }
 
     // 3. Wikimedia Commons API (Public Domain & Creative Commons — NO key required)
-    if (results.length < limit) {
+    if (results.length < minResults) {
       try {
         const wmUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(`filetype:bitmap ${cleanQuery}`)}&gsrnamespace=6&gsrlimit=10&prop=imageinfo&iiprop=url|dimensions|mime&iiurlwidth=1200&format=json`;
         const resp = await axios.get(wmUrl, { timeout: 8000, headers: { "User-Agent": "SPLSEO/2.0 (https://seo.splworks.com)" } });
@@ -630,7 +677,7 @@ class AiService {
     }
 
     // 4. Bing Images Async Search with Creative Commons / Free Commercial License filter (+filterui:license-L2_L3_L4)
-    if (results.length < limit) {
+    if (results.length < minResults) {
       const bingUrls = [
         `https://www.bing.com/images/async?q=${encodeURIComponent(cleanQuery)}&first=0&count=20&adlt=strict&mkt=vi-VN&qft=+filterui:license-L2_L3_L4+filterui:photo-photo`,
         `https://www.bing.com/images/async?q=${encodeURIComponent(cleanQuery)}&first=0&count=20&adlt=strict&mkt=vi-VN&qft=+filterui:photo-photo`,
@@ -671,12 +718,12 @@ class AiService {
         } catch (e) {
           console.warn("[AI-ImageSearch] Bing Async error:", e.message);
         }
-        if (results.length >= 6) break;
+        if (results.length >= minResults) break;
       }
     }
 
     // 5. Google Images Direct Search with Creative Commons filter (tbs=il:cl)
-    if (results.length < limit) {
+    if (results.length < minResults) {
       const googleUrls = [
         `https://www.google.com/search?q=${encodeURIComponent(cleanQuery)}&tbm=isch&tbs=il:cl&hl=vi&gl=vn&safe=active`,
         `https://www.google.com/search?q=${encodeURIComponent(cleanQuery)}&tbm=isch&hl=vi&gl=vn&safe=active`,
@@ -1132,7 +1179,7 @@ class AiService {
       return cfg.imageModel; // fallback to generic imageModel
     };
     // Smart Image Routing: determine which AI providers to try (A2)
-    const imageChain = this._getImageProviderChain(settings, apiKeys);
+    const imageChain = options.preferRealImages ? ["google-search"] : this._getImageProviderChain(settings, apiKeys);
     console.log(`[AI-Image] Image routing: [${imageChain.join(" → ")}] | type: ${imageType}`);
     const shouldTryProvider = (p) => imageChain.includes(p);
 
@@ -1431,7 +1478,10 @@ class AiService {
       else if (Array.isArray(options.excludeUrls) && !options.excludeUrls.includes(u)) options.excludeUrls.push(u);
     };
 
-    const englishVisualQuery = this._extractEnglishVisualKeywords(prompt);
+    const englishVisualQuery = this._extractEnglishVisualKeywords(
+      prompt,
+      `${options.searchQuery || ""} ${options.fallbackQuery || ""}`
+    );
     const rawQueries = [
       englishVisualQuery,
       options.searchQuery,
@@ -1448,7 +1498,8 @@ class AiService {
           apiKeys,
           excludeUrls: options.excludeUrls,
           strictCopyright: true,
-          limit: 12,
+          limit: 10,
+          minResults: 4,
         });
 
         for (const cand of candidates.slice(0, 6)) {
