@@ -73,7 +73,7 @@ async function fetchApi(endpoint, options = {}) {
     if (!response.ok) {
       const error = await response
         .json()
-        .catch(() => ({ error: "Server error" }));
+        .catch(() => ({ error: `Server error (HTTP ${response.status})` }));
       throw new Error(error.error || "Request failed");
     }
     return response.json();
