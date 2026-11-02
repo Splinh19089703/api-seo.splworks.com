@@ -1,59 +1,33 @@
 const axios = require("axios");
+const wpService = require("./wp-service");
 
 // ==================== Platform Strategies ====================
 
 class WordPressStrategy {
   async publish(account, article, options = {}) {
-    const creds = account.credentials;
-    const postData = {
-      title: article.title,
-      content: article.content,
+    const creds = account.credentials || {};
+    const res = await wpService.publish(creds, {
+      ...article,
       status: options.status || account.defaults?.status || "draft",
       categories: options.categories || [],
       tags: options.tags || [],
-      meta: {},
-    };
-    if (article.featuredMediaId) postData.featured_media = article.featuredMediaId;
-    if (article.metaTitle) postData.meta.yoast_wpseo_title = article.metaTitle;
-    if (article.metaDescription) postData.meta.yoast_wpseo_metadesc = article.metaDescription;
-    if (article.focusKeyword) postData.meta.yoast_wpseo_focuskw = article.focusKeyword;
-
-    const resp = await axios.post(`${creds.siteUrl}/wp-json/wp/v2/posts`, postData, {
-      auth: { username: creds.username, password: creds.appPassword },
-      timeout: 30000,
     });
-    return { postId: resp.data.id, url: resp.data.link, status: resp.data.status, title: resp.data.title.rendered };
+    return { postId: res.id, url: res.link, status: res.status, title: res.title };
   }
 
   async testConnection(account) {
-    const creds = account.credentials;
-    const resp = await axios.get(`${creds.siteUrl}/wp-json/wp/v2/posts?per_page=1`, {
-      auth: { username: creds.username, password: creds.appPassword },
-      timeout: 10000,
-    });
-    return { success: true, message: `Kết nối WordPress thành công! (${resp.status})` };
+    const creds = account.credentials || {};
+    return wpService.testConnection(creds);
   }
 
   async getCategories(account) {
-    const creds = account.credentials;
-    const resp = await axios.get(`${creds.siteUrl}/wp-json/wp/v2/categories?per_page=100`, {
-      auth: { username: creds.username, password: creds.appPassword },
-      timeout: 10000,
-    });
-    return resp.data.map(c => ({ id: c.id, name: c.name, slug: c.slug, count: c.count }));
+    const creds = account.credentials || {};
+    return wpService.syncCategories(creds);
   }
 
   async uploadImage(account, imageUrl, altText = "") {
-    const creds = account.credentials;
-    const imgResp = await axios.get(imageUrl, { responseType: "arraybuffer" });
-    const buffer = Buffer.from(imgResp.data);
-    const filename = `ai-image-${Date.now()}.png`;
-    const resp = await axios.post(`${creds.siteUrl}/wp-json/wp/v2/media`, buffer, {
-      auth: { username: creds.username, password: creds.appPassword },
-      headers: { "Content-Type": "image/png", "Content-Disposition": `attachment; filename="${filename}"` },
-      timeout: 30000,
-    });
-    return { id: resp.data.id, url: resp.data.source_url, alt: altText };
+    const creds = account.credentials || {};
+    return wpService.uploadImage(creds, imageUrl, altText);
   }
 }
 

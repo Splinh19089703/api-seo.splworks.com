@@ -220,22 +220,40 @@ router.get("/wp-sites", async (req, res) => {
 
 router.post("/wp-sites", async (req, res) => {
   try {
-    const site = await storage.createForUser("wp-sites", {
+    let site = await storage.createForUser("wp-sites", {
       name: req.body.name,
       siteUrl: req.body.siteUrl,
-      username: req.body.username,
-      appPassword: req.body.appPassword,
+      username: req.body.username || "",
+      appPassword: req.body.appPassword || "",
       // SPLSEO Plugin connection (optional, preferred over App Password)
       pluginApiKey: req.body.pluginApiKey || null,
       webhookSecret: req.body.webhookSecret || null,
-      connectionMode: req.body.pluginApiKey ? 'plugin' : 'rest-api',
+      connectionMode: req.body.pluginApiKey ? "plugin" : "rest-api",
       pluginCapabilities: null,
       categories: [],
       lastTestOk: null,
       lastTestAt: null,
       lastTestMessage: null,
     }, req.userId);
-    res.status(201).json(site);
+
+    // Auto-test connection right after creating site
+    try {
+      const testRes = await wpService.testConnection(site);
+      site = await storage.update("wp-sites", site.id, {
+        connectionMode: testRes.connectionMode || site.connectionMode,
+        pluginCapabilities: testRes.capabilities || site.pluginCapabilities,
+        lastTestOk: testRes.success,
+        lastTestAt: new Date().toISOString(),
+        lastTestMessage: testRes.message,
+      });
+    } catch {}
+
+    res.status(201).json({
+      ...site,
+      appPassword: site.appPassword ? "••••••••" : "",
+      pluginApiKey: site.pluginApiKey ? "••••••••" : null,
+      webhookSecret: site.webhookSecret ? "••••••••" : null,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -311,6 +329,8 @@ router.post("/wp-sites/:id/test", async (req, res) => {
 
     // Persist test result so UI can show status badge without re-testing
     await storage.update("wp-sites", req.params.id, {
+      ...(result.connectionMode ? { connectionMode: result.connectionMode } : {}),
+      ...(result.capabilities ? { pluginCapabilities: result.capabilities } : {}),
       lastTestOk: result.success,
       lastTestAt: new Date().toISOString(),
       lastTestMessage: result.message,

@@ -15,20 +15,83 @@ class WpService {
   }
 
   /**
-   * Test WordPress connection
+   * Build axios auth + headers config supporting both SPLSEO Plugin API Key & WP Application Password
+   */
+  _authConfig(config, customHeaders = {}) {
+    const cleanPass = (config.appPassword || "").replace(/\s+/g, "");
+    const hasBasicAuth = Boolean(config.username && cleanPass && cleanPass !== "••••••••");
+    const hasPluginKey = Boolean(config.pluginApiKey && config.pluginApiKey !== "••••••••");
+
+    return {
+      ...(hasBasicAuth ? { auth: { username: config.username, password: cleanPass } } : {}),
+      headers: this._headers({
+        ...(hasPluginKey ? { "X-SPLSEO-Key": config.pluginApiKey } : {}),
+        ...customHeaders,
+      }),
+    };
+  }
+
+  /**
+   * Test WordPress connection (supports SPLSEO Connector Plugin or Application Password)
    */
   async testConnection(config) {
+    const cleanPass = (config.appPassword || "").replace(/\s+/g, "");
+    const hasBasicAuth = Boolean(config.username && cleanPass && cleanPass !== "••••••••");
+    const hasPluginKey = Boolean(config.pluginApiKey && config.pluginApiKey !== "••••••••");
+
+    // 1. Prefer SPLSEO Connector Plugin when pluginApiKey is configured
+    if (hasPluginKey && (config.connectionMode === "plugin" || !hasBasicAuth)) {
+      const pluginRes = await this.connectViaPlugin(config);
+      if (pluginRes.success) {
+        return {
+          success: true,
+          connectionMode: "plugin",
+          capabilities: pluginRes.capabilities || null,
+          plugin_version: pluginRes.plugin_version || "1.0.0",
+          message: `✅ Plugin v${pluginRes.plugin_version || "1.0"} — ${pluginRes.capabilities?.seo_plugin || "no SEO plugin"}${pluginRes.capabilities?.woocommerce ? " + WooCommerce" : ""}`,
+        };
+      }
+      if (!hasBasicAuth) {
+        return pluginRes;
+      }
+    }
+
+    // 2. Test via WP REST API (Application Password or X-SPLSEO-Key)
     try {
-      const cleanPass = (config.appPassword || '').replace(/\s+/g, '');
       const url = await this._resolveWpUrl(config.siteUrl, "/wp/v2/categories?per_page=1");
-      const response = await axios.get(url, {
-        auth: { username: config.username, password: cleanPass },
-        headers: this._headers(),
+      await axios.get(url, {
+        ...this._authConfig(config),
         timeout: 10000,
       });
+      // If plugin key is also present, enrich with plugin capabilities if available
+      if (hasPluginKey) {
+        const pluginRes = await this.connectViaPlugin(config);
+        if (pluginRes.success) {
+          return {
+            success: true,
+            connectionMode: "plugin",
+            capabilities: pluginRes.capabilities || null,
+            plugin_version: pluginRes.plugin_version || "1.0.0",
+            message: `✅ Kết nối thành công (Plugin v${pluginRes.plugin_version || "1.0"} · ${pluginRes.capabilities?.seo_plugin || "WP REST"})`,
+          };
+        }
+      }
       return { success: true, message: "Kết nối thành công!" };
     } catch (error) {
-      return { success: false, message: `Lỗi kết nối: ${error.message}` };
+      // Fallback to plugin connection test if Basic Auth failed
+      if (hasPluginKey) {
+        const pluginRes = await this.connectViaPlugin(config);
+        if (pluginRes.success) {
+          return {
+            success: true,
+            connectionMode: "plugin",
+            capabilities: pluginRes.capabilities || null,
+            plugin_version: pluginRes.plugin_version || "1.0.0",
+            message: `✅ Plugin v${pluginRes.plugin_version || "1.0"} — ${pluginRes.capabilities?.seo_plugin || "no SEO plugin"}${pluginRes.capabilities?.woocommerce ? " + WooCommerce" : ""}`,
+          };
+        }
+      }
+      return { success: false, message: `Lỗi kết nối: ${error.response?.data?.message || error.message}` };
     }
   }
 
@@ -36,11 +99,9 @@ class WpService {
    * Sync categories from WordPress
    */
   async syncCategories(config) {
-    const cleanPass = (config.appPassword || '').replace(/\s+/g, '');
     const url = await this._resolveWpUrl(config.siteUrl, "/wp/v2/categories?per_page=100");
     const response = await axios.get(url, {
-      auth: { username: config.username, password: cleanPass },
-      headers: this._headers(),
+      ...this._authConfig(config),
       timeout: 10000,
     });
     return response.data.map((cat) => ({
@@ -55,8 +116,6 @@ class WpService {
    * Publish article to WordPress
    */
   async publish(config, article) {
-    const cleanPass = (config.appPassword || '').replace(/\s+/g, '');
-
     // Automatically upload any local /api/uploads/images/... inside article HTML to WordPress Media Library
     let processedContent = article.content || "";
     const localImgRegex = /src=["']((?:https?:\/\/[^"']+)?\/api\/uploads\/images\/[^"']+)["']/gi;
@@ -85,6 +144,11 @@ class WpService {
       categories: article.categories || [],
       tags: article.tags || [],
       meta: {},
+      seo: {
+        title: article.metaTitle || "",
+        description: article.metaDescription || "",
+        focus_keyword: article.focusKeyword || "",
+      },
     };
 
     // Featured image (thumbnail)
@@ -117,12 +181,54 @@ class WpService {
       postData.slug = article.slug;
     }
 
+    const cleanPass = (config.appPassword || "").replace(/\s+/g, "");
+    const hasBasicAuth = Boolean(config.username && cleanPass && cleanPass !== "••••••••");
+    const hasPluginKey = Boolean(config.pluginApiKey && config.pluginApiKey !== "••••••••");
+
+    // Try plugin POST /splseo/v1/posts first if only pluginApiKey is configured
+    if (hasPluginKey && !hasBasicAuth) {
+      try {
+        const pluginUrl = await this._pluginUrl(config, "/posts");
+        const pluginResp = await axios.post(pluginUrl, postData, {
+          headers: this._pluginHeaders(config),
+          timeout: 30000,
+        });
+        if (pluginResp.data?.id) {
+          const pData = pluginResp.data;
+          return {
+            id: pData.id,
+            link: pData.link || pData.url,
+            previewLink: pData.status === "draft"
+              ? `${config.siteUrl}/wp-admin/post.php?post=${pData.id}&action=preview`
+              : (pData.link || pData.url),
+            status: pData.status,
+            title: pData.title?.rendered || pData.title || article.title,
+          };
+        }
+      } catch (e) {
+        console.warn("[WP-Publish] Plugin /splseo/v1/posts fallback to /wp/v2/posts:", e.message);
+      }
+    }
+
     const url = await this._resolveWpUrl(config.siteUrl, "/wp/v2/posts");
     const response = await axios.post(url, postData, {
-      auth: { username: config.username, password: cleanPass },
-      headers: this._headers({ "Content-Type": "application/json" }),
+      ...this._authConfig(config, { "Content-Type": "application/json" }),
       timeout: 30000,
     });
+
+    // Sync SEO meta via SPLSEO Connector plugin if pluginApiKey is configured
+    if (hasPluginKey && response.data?.id && (article.metaTitle || article.metaDescription || article.focusKeyword)) {
+      try {
+        await this.updatePluginPost(config, response.data.id, {
+          seo: {
+            title: article.metaTitle || "",
+            description: article.metaDescription || "",
+            focus_keyword: article.focusKeyword || "",
+          },
+          splseo_status: "optimized",
+        });
+      } catch {}
+    }
 
     return {
       id: response.data.id,
@@ -132,7 +238,7 @@ class WpService {
         ? `${config.siteUrl}/wp-admin/post.php?post=${response.data.id}&action=preview`
         : response.data.link,
       status: response.data.status,
-      title: response.data.title.rendered,
+      title: response.data.title?.rendered || response.data.title || article.title,
     };
   }
 
@@ -165,11 +271,9 @@ class WpService {
       filename = `ai-image-${Date.now()}.${ext}`;
     }
 
-    const cleanPass = (config.appPassword || '').replace(/\s+/g, '');
     const url = await this._resolveWpUrl(config.siteUrl, "/wp/v2/media");
     const response = await axios.post(url, buffer, {
-      auth: { username: config.username, password: cleanPass },
-      headers: this._headers({
+      ...this._authConfig(config, {
         "Content-Type": mimeType,
         "Content-Disposition": `attachment; filename="${filename}"`,
       }),
