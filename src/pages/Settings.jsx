@@ -928,11 +928,14 @@ function AiProviderSection() {
 function PublishingSection() {
   const [sites, setSites] = useState([]);
   const [showModal, setShowModal] = useState(false);
+  const [authMode, setAuthMode] = useState("plugin"); // "plugin" | "app-password"
   const [form, setForm] = useState({
     name: "",
     siteUrl: "",
     username: "",
     appPassword: "",
+    pluginApiKey: "",
+    webhookSecret: "",
   });
   const [creating, setCreating] = useState(false);
   const [createMsg, setCreateMsg] = useState(null);
@@ -945,17 +948,37 @@ function PublishingSection() {
     loadSites();
   }, [loadSites]);
 
+  const isFormValid =
+    Boolean(form.name.trim() && form.siteUrl.trim()) &&
+    (authMode === "plugin"
+      ? Boolean(form.pluginApiKey.trim())
+      : Boolean(form.username.trim() && form.appPassword.trim()));
+
   const handleCreate = async () => {
-    if (!form.name || !form.siteUrl || !form.username || !form.appPassword) return;
+    if (!isFormValid) return;
     setCreating(true);
     setCreateMsg(null);
     try {
       let url = form.siteUrl.trim();
       if (!url.startsWith("http")) url = "https://" + url;
       url = url.replace(/\/+$/, "");
-      await api.createWpSite({ ...form, siteUrl: url });
+      await api.createWpSite({
+        name: form.name.trim(),
+        siteUrl: url,
+        username: form.username.trim(),
+        appPassword: form.appPassword.trim(),
+        pluginApiKey: form.pluginApiKey.trim() || null,
+        webhookSecret: form.webhookSecret.trim() || null,
+      });
       setShowModal(false);
-      setForm({ name: "", siteUrl: "", username: "", appPassword: "" });
+      setForm({
+        name: "",
+        siteUrl: "",
+        username: "",
+        appPassword: "",
+        pluginApiKey: "",
+        webhookSecret: "",
+      });
       loadSites();
     } catch (e) {
       setCreateMsg(`❌ ${e.message}`);
@@ -987,7 +1010,7 @@ function PublishingSection() {
         <div>
           <h2 style={{ fontSize: 18 }}>Nền tảng đăng bài</h2>
           <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-            Quản lý kết nối WordPress — test và chỉnh sửa ngay tại đây
+            Quản lý kết nối WordPress (SPLSEO Connector Plugin hoặc Application Password)
           </p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowModal(true)}>
@@ -1033,13 +1056,13 @@ function PublishingSection() {
       {/* Add site modal */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 500 }}>
             <h2>🌐 Thêm WordPress Site</h2>
             <div className="form-group">
               <label>Tên Site *</label>
               <input
                 type="text"
-                placeholder="VĐ: Blog chính"
+                placeholder="VD: SPLWorks.com"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
@@ -1048,7 +1071,7 @@ function PublishingSection() {
               <label>Site URL *</label>
               <input
                 type="url"
-                placeholder="https://your-site.com"
+                placeholder="https://splworks.com"
                 value={form.siteUrl}
                 onChange={(e) => setForm({ ...form, siteUrl: e.target.value })}
               />
@@ -1056,29 +1079,152 @@ function PublishingSection() {
                 Nhập domain chính, không bao gồm /wp-admin
               </div>
             </div>
-            <div className="form-group">
-              <label>Username *</label>
-              <input
-                type="text"
-                placeholder="admin"
-                value={form.username}
-                onChange={(e) => setForm({ ...form, username: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label>Application Password *</label>
-              <input
-                type="password"
-                placeholder="xxxx xxxx xxxx xxxx"
-                value={form.appPassword}
-                onChange={(e) =>
-                  setForm({ ...form, appPassword: e.target.value })
-                }
-              />
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                Tạo tại: WordPress → Users → Profile → Application Passwords
+
+            {/* Connection Mode Switcher */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 8 }}>
+                Phương thức kết nối
+              </label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setAuthMode("plugin")}
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: authMode === "plugin"
+                      ? "2px solid var(--accent-purple, #6366f1)"
+                      : "1px solid var(--border-light, #e2e8f0)",
+                    background: authMode === "plugin"
+                      ? "rgba(99, 102, 241, 0.08)"
+                      : "var(--bg-secondary, #f8fafc)",
+                    color: authMode === "plugin"
+                      ? "var(--accent-purple, #4f46e5)"
+                      : "var(--text-secondary)",
+                    fontWeight: 600,
+                    fontSize: 12,
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <div>🔌 SPLSEO Plugin</div>
+                  <div style={{ fontSize: 10, fontWeight: 400, opacity: 0.85, marginTop: 2 }}>
+                    Khuyên dùng · Đồng bộ 2 chiều
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAuthMode("app-password")}
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: authMode === "app-password"
+                      ? "2px solid var(--accent-blue, #3b82f6)"
+                      : "1px solid var(--border-light, #e2e8f0)",
+                    background: authMode === "app-password"
+                      ? "rgba(59, 130, 246, 0.08)"
+                      : "var(--bg-secondary, #f8fafc)",
+                    color: authMode === "app-password"
+                      ? "var(--accent-blue, #2563eb)"
+                      : "var(--text-secondary)",
+                    fontWeight: 600,
+                    fontSize: 12,
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <div>🔑 App Password</div>
+                  <div style={{ fontSize: 10, fontWeight: 400, opacity: 0.85, marginTop: 2 }}>
+                    WP REST API cơ bản
+                  </div>
+                </button>
               </div>
             </div>
+
+            {authMode === "plugin" ? (
+              <>
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    background: "rgba(99, 102, 241, 0.08)",
+                    border: "1px solid rgba(99, 102, 241, 0.2)",
+                    fontSize: 12,
+                    color: "var(--text-secondary)",
+                    marginBottom: 14,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  💡 Vào WordPress Admin → <b>Cài đặt → SPLSEO Connector</b> để copy <b>API Key</b> và <b>Webhook Secret</b> dán vào dưới đây.
+                </div>
+                <div className="form-group">
+                  <label>🔑 Plugin API Key *</label>
+                  <input
+                    type="text"
+                    placeholder="splseo_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    value={form.pluginApiKey}
+                    onChange={(e) =>
+                      setForm({ ...form, pluginApiKey: e.target.value })
+                    }
+                    style={{ fontFamily: "monospace", fontSize: 13 }}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>🔔 Webhook Secret (Tùy chọn)</label>
+                  <input
+                    type="text"
+                    placeholder="6b1f5d54812211f4f9750a964522ac0b"
+                    value={form.webhookSecret}
+                    onChange={(e) =>
+                      setForm({ ...form, webhookSecret: e.target.value })
+                    }
+                    style={{ fontFamily: "monospace", fontSize: 13 }}
+                  />
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    Dùng để tự động đồng bộ khi bài viết/sản phẩm trên WordPress thay đổi
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="form-group">
+                  <label>Username *</label>
+                  <input
+                    type="text"
+                    placeholder="admin"
+                    value={form.username}
+                    onChange={(e) => setForm({ ...form, username: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Application Password *</label>
+                  <input
+                    type="password"
+                    placeholder="xxxx xxxx xxxx xxxx"
+                    value={form.appPassword}
+                    onChange={(e) =>
+                      setForm({ ...form, appPassword: e.target.value })
+                    }
+                  />
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    Tạo tại: WordPress → Users → Profile → Application Passwords
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>🔌 Plugin API Key (Tùy chọn)</label>
+                  <input
+                    type="text"
+                    placeholder="splseo_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    value={form.pluginApiKey}
+                    onChange={(e) =>
+                      setForm({ ...form, pluginApiKey: e.target.value })
+                    }
+                    style={{ fontFamily: "monospace", fontSize: 13 }}
+                  />
+                </div>
+              </>
+            )}
+
             {createMsg && (
               <div
                 style={{
@@ -1104,15 +1250,9 @@ function PublishingSection() {
               <button
                 className="btn btn-primary"
                 onClick={handleCreate}
-                disabled={
-                  creating ||
-                  !form.name ||
-                  !form.siteUrl ||
-                  !form.username ||
-                  !form.appPassword
-                }
+                disabled={creating || !isFormValid}
               >
-                {creating ? "⏳ Đang tạo..." : "Thêm mới"}
+                {creating ? "⏳ Đang kết nối..." : "Thêm mới & Kết nối"}
               </button>
             </div>
           </div>

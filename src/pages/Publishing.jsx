@@ -4,11 +4,13 @@ import { api } from "../api";
 
 // ===== Platform Definitions =====
 const PLATFORMS = [
-  { id: "wordpress", name: "WordPress", icon: "🔵", auth: "REST API", color: "#0073aa", phase: 1,
+  { id: "wordpress", name: "WordPress", icon: "🔵", auth: "SPLSEO Plugin / REST API", color: "#0073aa", phase: 1,
     fields: [
-      { key: "siteUrl", label: "URL Website", placeholder: "https://example.com", type: "text" },
-      { key: "username", label: "Username", placeholder: "admin", type: "text" },
-      { key: "appPassword", label: "Application Password", placeholder: "xxxx xxxx xxxx xxxx", type: "password" },
+      { key: "siteUrl", label: "URL Website *", placeholder: "https://splworks.com", type: "text" },
+      { key: "pluginApiKey", label: "🔑 Plugin API Key (SPLSEO Connector — Khuyên dùng)", placeholder: "splseo_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", type: "text" },
+      { key: "webhookSecret", label: "🔔 Webhook Secret (Tùy chọn)", placeholder: "6b1f5d54812211f4f9750a964522ac0b", type: "text" },
+      { key: "username", label: "Username (Tùy chọn nếu đã có Plugin API Key)", placeholder: "admin", type: "text" },
+      { key: "appPassword", label: "Application Password (Tùy chọn nếu đã có Plugin API Key)", placeholder: "xxxx xxxx xxxx xxxx", type: "password" },
     ]},
   { id: "blogger", name: "Blogger", icon: "📙", auth: "Google OAuth", color: "#ff6f00", phase: 1,
     fields: [
