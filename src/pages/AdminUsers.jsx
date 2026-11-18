@@ -115,7 +115,7 @@ export default function AdminUsers() {
       >
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>🛡️ Quản lý & Giám sát Users</h1>
+            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>🛡️ Quản lý User</h1>
             <span
               className="badge badge-danger"
               style={{
@@ -466,7 +466,7 @@ export default function AdminUsers() {
                       fontWeight: 600,
                     }}
                   >
-                    <span>👁️</span> Soi Dữ liệu & Lỗi
+                    <span>👁️</span> Xem dữ liệu và lỗi
                   </button>
                 </div>
               </div>
@@ -679,7 +679,7 @@ function UserInspectionModal({ user, onClose }) {
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
-                🛡️ Soi dữ liệu: {user.name || user.email}
+                🛡️ Xem dữ liệu và lỗi: {user.name || user.email}
               </h2>
               <span
                 style={{

@@ -182,7 +182,7 @@ export default function Layout() {
   const mobileMenuItems = useMemo(() => {
     const items = [...MORE_ITEMS];
     if (user?.role === "admin" || user?.isAdmin) {
-      items.unshift({ path: "/admin/users", icon: "🛡️", label: "Giám sát Users" });
+      items.unshift({ path: "/admin/users", icon: "🛡️", label: "Quản lý User" });
     }
     return items;
   }, [user]);
@@ -322,7 +322,7 @@ export default function Layout() {
                   fontWeight: 600,
                 }}
               >
-                <span className="nav-icon">🛡️</span> Giám sát Users
+                <span className="nav-icon">🛡️</span> Quản lý User
                 <span
                   className="nav-badge"
                   style={{
