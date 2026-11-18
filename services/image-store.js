@@ -72,8 +72,9 @@ function saveBase64ToFile(dataUri, prefix = 'img') {
     base64Data = dataUri;
   }
 
+  const safePrefix = String(prefix || 'img').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32) || 'img';
   const uuid = crypto.randomBytes(12).toString('hex');
-  const filename = `${prefix}-${uuid}.${ext}`;
+  const filename = `${safePrefix}-${uuid}.${ext}`;
   const filePath = path.join(UPLOADS_DIR, filename);
 
   fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));

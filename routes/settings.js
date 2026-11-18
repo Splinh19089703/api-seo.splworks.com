@@ -31,6 +31,18 @@ function getApiKeyLimit(license) {
 router.get("/", async (req, res) => {
   try {
     const settings = await storage.getSettings();
+    if (!req.isAdmin && settings && typeof settings === "object") {
+      // Mask any secret-like keys in global settings for non-admin users
+      const sanitized = {};
+      for (const [k, v] of Object.entries(settings)) {
+        if (/key|secret|token|password/i.test(k) && typeof v === "string" && v) {
+          sanitized[k] = "••••••••";
+        } else {
+          sanitized[k] = v;
+        }
+      }
+      return res.json(sanitized);
+    }
     res.json(settings);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -100,7 +112,11 @@ router.post("/api-keys", async (req, res) => {
       active: req.body.active !== false,
       usageToday: 0,
     }, req.userId);
-    res.status(201).json(key);
+    const rawKey = String(key.apiKey || "");
+    res.status(201).json({
+      ...key,
+      apiKey: rawKey.length > 4 ? `...${rawKey.slice(-4)}` : "••••",
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -158,8 +174,11 @@ router.post("/api-keys/test", async (req, res) => {
   try {
     if (provider === "gemini") {
       const resp = await axios.get(
-        `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
-        { timeout: 10000 },
+        "https://generativelanguage.googleapis.com/v1beta/models",
+        {
+          headers: { "x-goog-api-key": apiKey },
+          timeout: 10000,
+        },
       );
       if (resp.data?.models)
         return res.json({
@@ -236,12 +255,15 @@ router.post("/wp-sites", async (req, res) => {
       lastTestMessage: null,
     }, req.userId);
 
-    // Auto-test connection right after creating site
+    // Auto-test connection right after creating site & sync webhookSecret from plugin
     try {
       const testRes = await wpService.testConnection(site);
       site = await storage.update("wp-sites", site.id, {
         connectionMode: testRes.connectionMode || site.connectionMode,
         pluginCapabilities: testRes.capabilities || site.pluginCapabilities,
+        ...(!site.webhookSecret && testRes.webhook_secret
+          ? { webhookSecret: testRes.webhook_secret }
+          : {}),
         lastTestOk: testRes.success,
         lastTestAt: new Date().toISOString(),
         lastTestMessage: testRes.message,
@@ -266,17 +288,20 @@ router.post("/wp-sites/:id/test-plugin", async (req, res) => {
     if (!site) return res.status(404).json({ error: "Site not found" });
     if (!site.pluginApiKey) return res.status(400).json({ error: "Plugin API Key chưa được cấu hình" });
 
-    const result = await wpService.connectViaPlugin(site);
+    const { webhook_secret: syncedWebhookSecret, ...publicResult } = await wpService.connectViaPlugin(site);
 
     await storage.update("wp-sites", req.params.id, {
-      connectionMode: result.success ? 'plugin' : site.connectionMode,
-      pluginCapabilities: result.success ? result.capabilities : null,
-      lastTestOk: result.success,
+      connectionMode: publicResult.success ? 'plugin' : site.connectionMode,
+      pluginCapabilities: publicResult.success ? publicResult.capabilities : null,
+      ...(!site.webhookSecret && syncedWebhookSecret
+        ? { webhookSecret: syncedWebhookSecret }
+        : {}),
+      lastTestOk: publicResult.success,
       lastTestAt: new Date().toISOString(),
-      lastTestMessage: result.success ? `✅ Plugin v${result.plugin_version} — ${result.capabilities?.seo_plugin || 'no SEO plugin'}${result.capabilities?.woocommerce ? ' + WooCommerce' : ''}` : result.message,
+      lastTestMessage: publicResult.success ? `✅ Plugin v${publicResult.plugin_version} — ${publicResult.capabilities?.seo_plugin || 'no SEO plugin'}${publicResult.capabilities?.woocommerce ? ' + WooCommerce' : ''}` : publicResult.message,
     });
 
-    res.json(result);
+    res.json(publicResult);
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -325,18 +350,21 @@ router.post("/wp-sites/:id/test", async (req, res) => {
     const site = await storage.getByIdForUser("wp-sites", req.params.id, req.userId);
     if (!site) return res.status(404).json({ error: "Site not found" });
 
-    const result = await wpService.testConnection(site);
+    const { webhook_secret: syncedWebhookSecret, ...publicResult } = await wpService.testConnection(site);
 
     // Persist test result so UI can show status badge without re-testing
     await storage.update("wp-sites", req.params.id, {
-      ...(result.connectionMode ? { connectionMode: result.connectionMode } : {}),
-      ...(result.capabilities ? { pluginCapabilities: result.capabilities } : {}),
-      lastTestOk: result.success,
+      ...(publicResult.connectionMode ? { connectionMode: publicResult.connectionMode } : {}),
+      ...(publicResult.capabilities ? { pluginCapabilities: publicResult.capabilities } : {}),
+      ...(!site.webhookSecret && syncedWebhookSecret
+        ? { webhookSecret: syncedWebhookSecret }
+        : {}),
+      lastTestOk: publicResult.success,
       lastTestAt: new Date().toISOString(),
-      lastTestMessage: result.message,
+      lastTestMessage: publicResult.message,
     });
 
-    res.json(result);
+    res.json(publicResult);
   } catch (error) {
     const msg = error.message;
     const ownedSite = await storage.getByIdForUser("wp-sites", req.params.id, req.userId);

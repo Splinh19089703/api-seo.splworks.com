@@ -10,6 +10,24 @@ try { require("dotenv").config({ path: path.join(__dirname, ".env") }); } catch(
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Trust 1 hop reverse proxy (Nginx / FastPanel) so req.ip & rate-limiter see real client IP
+app.set("trust proxy", 1);
+app.disable("x-powered-by");
+
+// Security Headers (Helmet if installed, otherwise built-in hardened headers)
+try {
+  const helmet = require("helmet");
+  app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+} catch {
+  app.use((_req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("X-XSS-Protection", "0");
+    next();
+  });
+}
+
 // Middleware
 // C4: Gzip compression — reduces response size ~60-70% for JSON/text
 let compression;
@@ -22,7 +40,14 @@ app.use(cors({
     : ['http://localhost:5173'],
   credentials: true
 }));
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({
+  limit: "10mb",
+  verify: (req, _res, buf) => {
+    if (req.originalUrl && req.originalUrl.startsWith("/api/webhook")) {
+      req.rawBody = buf;
+    }
+  },
+}));
 
 // ===== Global Rate Limiter (DDoS protection) =====
 const globalLimiter = rateLimit({

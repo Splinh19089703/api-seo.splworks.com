@@ -1,11 +1,19 @@
 const path = require("path");
-const axios = require("axios");
+const rawAxios = require("axios");
 const cheerio = require("cheerio");
 const crypto = require("crypto");
-const https = require("https");
+const {
+  assertSafeExternalUrl,
+  safeHttpAgent,
+  safeInsecureHttpsAgent,
+} = require("../utils/ssrf-guard");
 
-// SSL bypass agent for sites with self-signed or expired certs
-const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+// SSL bypass agent for sites with self-signed or expired certs, hardened with safeLookup against SSRF
+const httpsAgent = safeInsecureHttpsAgent;
+const axios = rawAxios.create({
+  httpAgent: safeHttpAgent,
+  httpsAgent: safeInsecureHttpsAgent,
+});
 
 // Reuse existing scraper modules (co-located in services/scraper/)
 const Crawler = require("./scraper/crawler");
@@ -25,6 +33,7 @@ class AuditService {
    * Crawl a full site and generate SEO audit
    */
   async auditSite(domain, options = {}) {
+    await assertSafeExternalUrl(domain);
     const maxPages = options.maxPages || 200;
     const startTime = Date.now();
     const baseDomain = this._extractDomain(domain);

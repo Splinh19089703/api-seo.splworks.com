@@ -2,6 +2,15 @@ const express = require("express");
 const router = express.Router();
 const storage = require("../services/storage");
 const axios = require("axios");
+const {
+  assertSafeExternalUrl,
+  safeHttpAgent,
+  safeHttpsAgent,
+} = require("../utils/ssrf-guard");
+const {
+  maskProjectSecrets,
+  mergeProjectConfigPreservingSecrets,
+} = require("../utils/secret-mask");
 
 // Default project config
 function defaultConfig() {
@@ -76,7 +85,7 @@ function defaultConfig() {
 router.get("/", async (req, res) => {
   try {
     const projects = await storage.getAllForUser("projects", req.userId);
-    res.json(projects);
+    res.json(projects.map(maskProjectSecrets));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -89,7 +98,7 @@ router.get("/:id", async (req, res) => {
     if (!project) return res.status(404).json({ error: "Project not found" });
     // Merge defaults for missing config keys
     project.config = { ...defaultConfig(), ...(project.config || {}) };
-    res.json(project);
+    res.json(maskProjectSecrets(project));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -128,21 +137,30 @@ router.post("/", async (req, res) => {
       kwPlans: 0,
       config,
     }, req.userId);
-    res.status(201).json(project);
+    res.status(201).json(maskProjectSecrets(project));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// PUT update project
+// PUT update project (whitelisted fields + preserve masked secrets)
 router.put("/:id", async (req, res) => {
   try {
     const existing = await storage.getByIdForUser("projects", req.params.id, req.userId);
     if (!existing) return res.status(404).json({ error: "Project not found" });
-    const { userId: _userId, ...updates } = req.body;
+
+    const allowedTopFields = ["name", "description", "domain", "status"];
+    const updates = {};
+    for (const f of allowedTopFields) {
+      if (req.body[f] !== undefined) updates[f] = req.body[f];
+    }
+    if (req.body.config && typeof req.body.config === "object") {
+      updates.config = mergeProjectConfigPreservingSecrets(existing.config, req.body.config);
+    }
+
     const project = await storage.update("projects", req.params.id, updates);
     if (!project) return res.status(404).json({ error: "Project not found" });
-    res.json(project);
+    res.json(maskProjectSecrets(project));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -178,7 +196,7 @@ router.post("/:id/clone", async (req, res) => {
       kwPlans: 0,
       config: { ...defaultConfig(), ...(source.config || {}) },
     }, req.userId);
-    res.status(201).json(cloned);
+    res.status(201).json(maskProjectSecrets(cloned));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -196,11 +214,14 @@ router.post("/:id/test-wordpress", async (req, res) => {
         error: "Chưa cấu hình WordPress đầy đủ",
       });
     }
-    const baseUrl = wp.url.replace(/\/+$/, "");
+    const safeUrl = await assertSafeExternalUrl(wp.url);
+    const baseUrl = safeUrl.replace(/\/+$/, "");
     const response = await axios.get(
       `${baseUrl}/wp-json/wp/v2/posts?per_page=1`,
       {
         auth: { username: wp.username, password: wp.appPassword },
+        httpAgent: safeHttpAgent,
+        httpsAgent: safeHttpsAgent,
         timeout: 10000,
       },
     );

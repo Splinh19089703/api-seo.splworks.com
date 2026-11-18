@@ -2,6 +2,10 @@ const express = require("express");
 const router = express.Router();
 const storage = require("../services/storage");
 const publishService = require("../services/publish-service");
+const {
+  maskAccountSecrets,
+  mergePreservingMaskedCredentials,
+} = require("../utils/secret-mask");
 
 // ===== Publishing Accounts CRUD =====
 
@@ -38,21 +42,14 @@ router.get("/accounts", async (req, res) => {
     ];
 
     // Hide sensitive credentials in list view
-    const safe = combined.map(a => ({
-      ...a,
-      credentials: Object.fromEntries(
-        Object.entries(a.credentials || {}).map(([k, v]) =>
-          [k, typeof v === "string" && v.length > 4 ? v.substring(0, 4) + "••••" : v]
-        )
-      ),
-    }));
+    const safe = combined.map(maskAccountSecrets);
     res.json(safe);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// GET single account (full credentials for edit)
+// GET single account (masked credentials — prevents token theft via GET)
 router.get("/accounts/:id", async (req, res) => {
   try {
     let account = await storage.getByIdForUser("publishing-accounts", req.params.id, req.userId);
@@ -67,7 +64,7 @@ router.get("/accounts/:id", async (req, res) => {
       }
     }
     if (!account) return res.status(404).json({ error: "Account not found" });
-    res.json(account);
+    res.json(maskAccountSecrets(account));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -110,7 +107,7 @@ router.post("/accounts", async (req, res) => {
         stats: { totalShared: 0, lastShared: null },
       }, req.userId);
 
-      return res.status(201).json(socAccount);
+      return res.status(201).json(maskAccountSecrets(socAccount));
     }
 
     const account = await storage.createForUser("publishing-accounts", {
@@ -121,7 +118,7 @@ router.post("/accounts", async (req, res) => {
       defaults: req.body.defaults || { status: "draft" },
       stats: { totalPublished: 0, lastPublished: null },
     }, req.userId);
-    res.status(201).json(account);
+    res.status(201).json(maskAccountSecrets(account));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -137,19 +134,27 @@ router.put("/accounts/:id", async (req, res) => {
       collection = "social-accounts";
     }
     if (!existing) return res.status(404).json({ error: "Account not found" });
-    const { userId: _userId, ...updates } = req.body;
+
+    // Whitelist updatable fields & preserve masked credentials
+    const allowedFields = ["name", "platform", "active", "autoShare", "defaults"];
+    const updates = {};
+    for (const f of allowedFields) {
+      if (req.body[f] !== undefined) updates[f] = req.body[f];
+    }
+    if (req.body.credentials && typeof req.body.credentials === "object") {
+      updates.credentials = mergePreservingMaskedCredentials(existing.credentials, req.body.credentials);
+    }
 
     // Synchronize social-accounts fields if updating Facebook
     if (collection === "social-accounts") {
       if (updates.name) updates.pageName = updates.name;
-      if (updates.credentials) {
-        updates.credentials = { ...existing.credentials, ...updates.credentials };
-        if (updates.credentials.pageId) updates.pageId = updates.credentials.pageId;
+      if (updates.credentials?.pageId) {
+        updates.pageId = updates.credentials.pageId;
       }
     }
 
     const updated = await storage.update(collection, req.params.id, updates);
-    res.json(updated);
+    res.json(maskAccountSecrets(updated));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

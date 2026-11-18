@@ -1,7 +1,17 @@
-const axios = require("axios");
+const rawAxios = require("axios");
 const cheerio = require("cheerio");
 const chalk = require("chalk");
 const Crawler = require("./crawler");
+const {
+  assertSafeExternalUrl,
+  safeHttpAgent,
+  safeHttpsAgent,
+} = require("../../utils/ssrf-guard");
+
+const axios = rawAxios.create({
+  httpAgent: safeHttpAgent,
+  httpsAgent: safeHttpsAgent,
+});
 
 /**
  * Site Crawler Module - Cào bài viết từ domain hoặc category URL
@@ -27,11 +37,8 @@ class SiteCrawler {
   async discoverUrls(input, options = {}) {
     const { maxUrls = 20 } = options;
 
-    // Normalize input
-    let url = input;
-    if (!url.startsWith("http")) {
-      url = `https://${url}`;
-    }
+    // Normalize input & validate SSRF
+    let url = await assertSafeExternalUrl(input);
 
     console.log(chalk.blue(`\n🌐 Đang quét: ${url}\n`));
 

@@ -17,20 +17,34 @@ router.post("/wp", async (req, res) => {
   try {
     const signature = req.headers["x-splseo-signature"];
     const event = req.headers["x-splseo-event"];
-    const body = JSON.stringify(req.body);
+    const rawPayload = req.rawBody
+      ? req.rawBody
+      : Buffer.from(JSON.stringify(req.body || {}), "utf8");
 
-    // Find matching WP site by site_url
+    // Find matching WP site by exact normalized hostname
     const siteUrl = req.body?.site_url;
-    if (!siteUrl) {
+    if (!siteUrl || typeof siteUrl !== "string") {
       return res.status(400).json({ error: "Missing site_url" });
     }
 
-    // Verify webhook signature
+    let incomingHost;
+    try {
+      const normalized = /^https?:\/\//i.test(siteUrl.trim())
+        ? siteUrl.trim()
+        : `https://${siteUrl.trim()}`;
+      incomingHost = new URL(normalized).hostname.toLowerCase();
+    } catch {
+      return res.status(400).json({ error: "Invalid site_url" });
+    }
+
     const sites = await storage.getAll("wp-sites");
     const site = sites.find((s) => {
       if (!s.siteUrl) return false;
       try {
-        return siteUrl.includes(new URL(s.siteUrl).hostname);
+        const regNorm = /^https?:\/\//i.test(s.siteUrl.trim())
+          ? s.siteUrl.trim()
+          : `https://${s.siteUrl.trim()}`;
+        return new URL(regNorm).hostname.toLowerCase() === incomingHost;
       } catch {
         return false;
       }
@@ -40,22 +54,26 @@ router.post("/wp", async (req, res) => {
       return res.status(404).json({ error: "Unregistered WP site" });
     }
 
-    if (site.webhookSecret) {
-      if (!signature || typeof signature !== "string") {
-        return res.status(401).json({ error: "Missing webhook signature" });
-      }
-      const expected = crypto
-        .createHmac("sha256", site.webhookSecret)
-        .update(body)
-        .digest("hex");
-      const sigBuf = Buffer.from(signature, "utf8");
-      const expectedBuf = Buffer.from(expected, "utf8");
-      if (
-        sigBuf.length !== expectedBuf.length ||
-        !crypto.timingSafeEqual(sigBuf, expectedBuf)
-      ) {
-        return res.status(403).json({ error: "Invalid signature" });
-      }
+    // Always require HMAC webhook secret & signature
+    if (!site.webhookSecret) {
+      return res.status(403).json({
+        error: "Webhook secret chưa được đồng bộ cho site này. Hãy nhấn Kiểm tra kết nối Plugin trong Cài đặt.",
+      });
+    }
+    if (!signature || typeof signature !== "string") {
+      return res.status(401).json({ error: "Missing webhook signature" });
+    }
+    const expected = crypto
+      .createHmac("sha256", site.webhookSecret)
+      .update(rawPayload)
+      .digest("hex");
+    const sigBuf = Buffer.from(signature.trim(), "utf8");
+    const expectedBuf = Buffer.from(expected, "utf8");
+    if (
+      sigBuf.length !== expectedBuf.length ||
+      !crypto.timingSafeEqual(sigBuf, expectedBuf)
+    ) {
+      return res.status(403).json({ error: "Invalid signature" });
     }
 
     // Log webhook event

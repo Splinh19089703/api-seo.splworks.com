@@ -1,7 +1,18 @@
-const axios = require("axios");
+const rawAxios = require("axios");
 const fs = require('fs');
 const path = require('path');
 const imageStore = require('./image-store');
+const {
+  assertSafeExternalUrl,
+  safeHttpAgent,
+  safeHttpsAgent,
+} = require('../utils/ssrf-guard');
+
+// Hardened axios instance blocking SSRF & DNS-rebinding redirects to internal IPs
+const axios = rawAxios.create({
+  httpAgent: safeHttpAgent,
+  httpsAgent: safeHttpsAgent,
+});
 
 class WpService {
   /**
@@ -48,6 +59,7 @@ class WpService {
           connectionMode: "plugin",
           capabilities: pluginRes.capabilities || null,
           plugin_version: pluginRes.plugin_version || "1.0.0",
+          webhook_secret: pluginRes.webhook_secret || null,
           message: `✅ Plugin v${pluginRes.plugin_version || "1.0"} — ${pluginRes.capabilities?.seo_plugin || "no SEO plugin"}${pluginRes.capabilities?.woocommerce ? " + WooCommerce" : ""}`,
         };
       }
@@ -72,6 +84,7 @@ class WpService {
             connectionMode: "plugin",
             capabilities: pluginRes.capabilities || null,
             plugin_version: pluginRes.plugin_version || "1.0.0",
+            webhook_secret: pluginRes.webhook_secret || null,
             message: `✅ Kết nối thành công (Plugin v${pluginRes.plugin_version || "1.0"} · ${pluginRes.capabilities?.seo_plugin || "WP REST"})`,
           };
         }
@@ -87,6 +100,7 @@ class WpService {
             connectionMode: "plugin",
             capabilities: pluginRes.capabilities || null,
             plugin_version: pluginRes.plugin_version || "1.0.0",
+            webhook_secret: pluginRes.webhook_secret || null,
             message: `✅ Plugin v${pluginRes.plugin_version || "1.0"} — ${pluginRes.capabilities?.seo_plugin || "no SEO plugin"}${pluginRes.capabilities?.woocommerce ? " + WooCommerce" : ""}`,
           };
         }
@@ -258,8 +272,9 @@ class WpService {
       mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
       filename = `ai-image-${Date.now()}.${ext}`;
     } else {
-      // Fallback: download từ URL (URL ngoài, Unsplash, Pexels...)
-      const imageResponse = await axios.get(imageUrl, {
+      // Fallback: download từ URL (URL ngoài, Unsplash, Pexels...) — chặn SSRF
+      const safeImageUrl = await assertSafeExternalUrl(imageUrl);
+      const imageResponse = await axios.get(safeImageUrl, {
         responseType: "arraybuffer",
         timeout: 30000,
         headers: this._headers(),
@@ -296,7 +311,8 @@ class WpService {
    * Tries: /wp-json/ → /wp/wp-json/ → ?rest_route= (query fallback)
    */
   async _resolveWpUrl(siteUrl, path) {
-    const base = siteUrl.replace(/\/$/, "");
+    const safeSiteUrl = await assertSafeExternalUrl(siteUrl);
+    const base = safeSiteUrl.replace(/\/$/, "");
     // If path has query params, handle differently
     const [pathPart, queryPart] = path.split("?");
     const qs = queryPart ? `&${queryPart}` : "";

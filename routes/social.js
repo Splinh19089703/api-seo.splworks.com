@@ -35,6 +35,11 @@ const router = express.Router();
 const storage = require("../services/storage");
 const facebookService = require("../services/facebook-service");
 const { scrapeUrl, batchScrapeUrls } = require("../services/url-scraper");
+const {
+  isMaskedValue,
+  maskAccountSecrets,
+  mergePreservingMaskedCredentials,
+} = require("../utils/secret-mask");
 
 // =====================================================================
 // SOCIAL ACCOUNTS CRUD
@@ -67,7 +72,7 @@ router.get("/accounts", async (req, res) => {
 });
 
 /**
- * GET /accounts/:id — Get single account (full credentials for edit)
+ * GET /accounts/:id — Get single account (masked credentials)
  */
 router.get("/accounts/:id", async (req, res) => {
   try {
@@ -78,7 +83,7 @@ router.get("/accounts/:id", async (req, res) => {
     );
     if (!account)
       return res.status(404).json({ error: "Tài khoản không tìm thấy" });
-    res.json(account);
+    res.json(maskAccountSecrets(account));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -152,7 +157,7 @@ router.post("/accounts", async (req, res) => {
       req.userId
     );
 
-    res.status(201).json(account);
+    res.status(201).json(maskAccountSecrets(account));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -175,7 +180,6 @@ router.put("/accounts/:id", async (req, res) => {
       "active",
       "autoShare",
       "name",
-      "credentials",
       "pageName",
     ];
     const updates = {};
@@ -183,8 +187,19 @@ router.put("/accounts/:id", async (req, res) => {
       if (req.body[field] !== undefined) updates[field] = req.body[field];
     }
 
-    // If credentials updated with pageToken, re-fetch page info
-    if (updates.credentials?.pageToken && updates.credentials?.pageId) {
+    const tokenChanged =
+      req.body.credentials?.pageToken &&
+      !isMaskedValue(req.body.credentials.pageToken);
+
+    if (req.body.credentials && typeof req.body.credentials === "object") {
+      updates.credentials = mergePreservingMaskedCredentials(
+        account.credentials,
+        req.body.credentials
+      );
+    }
+
+    // If credentials updated with a new unmasked pageToken, re-fetch page info
+    if (tokenChanged && updates.credentials?.pageToken && updates.credentials?.pageId) {
       try {
         const info = await facebookService.getPageInfo(
           updates.credentials.pageId,
@@ -204,7 +219,7 @@ router.put("/accounts/:id", async (req, res) => {
       req.params.id,
       updates
     );
-    res.json(updated);
+    res.json(maskAccountSecrets(updated));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

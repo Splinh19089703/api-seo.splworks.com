@@ -3,6 +3,11 @@ const cheerio = require("cheerio");
 const fs = require("fs-extra");
 const path = require("path");
 const chalk = require("chalk");
+const {
+  assertSafeExternalUrl,
+  safeHttpAgent,
+  safeHttpsAgent,
+} = require("../../utils/ssrf-guard");
 
 /**
  * Crawler Module - Cào nội dung bài viết từ URL
@@ -26,8 +31,11 @@ class Crawler {
     console.log(chalk.blue(`\n🔍 Đang cào: ${url}\n`));
 
     try {
-      const response = await axios.get(url, {
+      const safeUrl = await assertSafeExternalUrl(url);
+      const response = await axios.get(safeUrl, {
         headers: this.headers,
+        httpAgent: safeHttpAgent,
+        httpsAgent: safeHttpsAgent,
         timeout: 15000,
         maxRedirects: 5,
       });
