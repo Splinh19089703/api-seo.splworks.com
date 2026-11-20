@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { api } from "../api";
 
+const GSC_CONSOLE_URL = "https://search.google.com/search-console";
+const GSC_WELCOME_URL = "https://search.google.com/search-console/welcome";
+
 // =====================================================================
 // Sub-components
 // =====================================================================
@@ -81,10 +84,11 @@ export default function GSC() {
   const [authUrl, setAuthUrl] = useState("");
   const [reconnecting, setReconnecting] = useState(false);
 
-  // Sites
+  // Sites & Guide
   const [sites, setSites] = useState([]);
   const [sitesLoading, setSitesLoading] = useState(false);
   const [selectedSite, setSelectedSite] = useState("");
+  const [showGuide, setShowGuide] = useState(false);
 
   // Data
   const [days, setDays] = useState(28);
@@ -115,7 +119,6 @@ export default function GSC() {
 
   const setErrorFromException = (prefix, e) => {
     const rawMsg = e?.message || "Lỗi không xác định";
-    // Tránh lặp tiền tố nếu thông báo từ server đã đầy đủ nghĩa tiếng Việt
     const cleanMsg =
       e?.code === "GSC_API_DISABLED" ||
       e?.code === "GSC_MISSING_SCOPE" ||
@@ -191,6 +194,8 @@ export default function GSC() {
         setSelectedSite((prev) =>
           prev && list.some((s) => s.siteUrl === prev) ? prev : list[0].siteUrl
         );
+      } else {
+        setSelectedSite("");
       }
     } catch (e) {
       if (mountedRef.current) {
@@ -222,7 +227,6 @@ export default function GSC() {
     const startDate = new Date(Date.now() - days * 86400000).toISOString().split("T")[0];
 
     try {
-      // Load dimensionless accurate totals + daily trend in parallel
       const [summaryRes, trendRes] = await Promise.allSettled([
         api.gscData({ siteUrl: selectedSite, startDate, endDate, dimensions: [], rowLimit: 1 }),
         api.gscTrend({ siteUrl: selectedSite, days }),
@@ -315,6 +319,7 @@ export default function GSC() {
       setQueries([]);
       setPages([]);
       setErrorInfo(null);
+      setShowGuide(false);
       try {
         const { url } = await api.gscAuthUrl();
         if (mountedRef.current) setAuthUrl(url);
@@ -329,9 +334,8 @@ export default function GSC() {
     setCacheClearing(true);
     try {
       await api.gscClearCache();
-      if (sites.length === 0) {
-        await loadSites(true);
-      } else {
+      await loadSites(true);
+      if (selectedSite) {
         await loadDashboard();
       }
     } catch (e) {
@@ -447,6 +451,102 @@ export default function GSC() {
   };
 
   // =====================================================================
+  // Onboarding / Guide Card Renderer (Sau khi kết nối Google)
+  // =====================================================================
+  const renderGuideOrEmptySites = () => {
+    const isEmptySites = !errorInfo && !sitesLoading && sites.length === 0;
+    if (!isEmptySites && !showGuide) return null;
+
+    const currentGscPropertyUrl = selectedSite
+      ? `${GSC_CONSOLE_URL}?resource_id=${encodeURIComponent(selectedSite)}`
+      : GSC_WELCOME_URL;
+
+    return (
+      <div className="card gsc-guide-card">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14.5, color: "var(--text-primary)" }}>
+              {isEmptySites
+                ? `🚀 Tài khoản ${email} chưa có website nào trong Google Search Console`
+                : "📖 Hướng dẫn thêm & kết nối website với Google Search Console"}
+            </div>
+            <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 2 }}>
+              {isEmptySites
+                ? "Làm theo 3 bước ngắn dưới đây để thêm website của bạn vào Search Console rồi tải lại ngay trên SPLSEO:"
+                : "Muốn theo dõi thêm website mới hoặc chưa thấy website xuất hiện trong danh sách chọn?"}
+            </div>
+          </div>
+          {!isEmptySites && (
+            <button
+              className="btn btn-sm"
+              onClick={() => setShowGuide(false)}
+              style={{ fontSize: 12 }}
+            >
+              Đóng hướng dẫn ✕
+            </button>
+          )}
+        </div>
+
+        <div className="gsc-guide-grid">
+          <div className="gsc-guide-step">
+            <strong>1. Khai báo website trên Google</strong>
+            Mở trang{" "}
+            <a href={GSC_WELCOME_URL} target="_blank" rel="noopener noreferrer" style={{ color: "#6366f1", fontWeight: 600 }}>
+              Google Search Console
+            </a>{" "}
+            bằng đúng Gmail <code>{email}</code>, chọn <em>URL Prefix</em> (nhập <code>https://tenmien.com/</code>) hoặc <em>Domain</em>.
+          </div>
+          <div className="gsc-guide-step">
+            <strong>2. Xác minh quyền sở hữu</strong>
+            Copy mã <strong>Thẻ HTML</strong> dán vào mục Webmaster Tools của RankMath / Yoast SEO (hoặc xác minh tự động qua Google Analytics / DNS) rồi bấm <em>Xác minh</em>.
+          </div>
+          <div className="gsc-guide-step">
+            <strong>3. Đồng bộ về SPLSEO</strong>
+            Quay lại đây và bấm <strong>Tải lại danh sách web</strong>. Lưu ý: website mới xác minh lần đầu sẽ cần khoảng 24–48 giờ để Google tổng hợp số liệu Clicks & Từ khóa.
+          </div>
+        </div>
+
+        <div style={{ marginTop: 14, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+          <a
+            href={GSC_WELCOME_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-primary btn-sm"
+            style={{ textDecoration: "none" }}
+          >
+            ➕ Mở Google Search Console thêm website
+          </a>
+          {selectedSite && (
+            <a
+              href={currentGscPropertyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-sm"
+              style={{ textDecoration: "none" }}
+            >
+              🌐 Mở trang GSC của {selectedSite.replace(/^https?:\/\//, "")}
+            </a>
+          )}
+          <button
+            className="btn btn-sm"
+            onClick={() => loadSites(true)}
+            disabled={sitesLoading}
+          >
+            {sitesLoading ? "⏳ Đang tải lại..." : "🔄 Tải lại danh sách web"}
+          </button>
+          <button
+            className="btn btn-sm"
+            onClick={handleReconnect}
+            disabled={reconnecting}
+          >
+            🔑 Đổi Gmail / Cấp lại quyền
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // =====================================================================
   // Trend chart (simple SVG)
   // =====================================================================
   const TrendChart = ({ data }) => {
@@ -553,6 +653,46 @@ export default function GSC() {
               {reconnecting ? "Đang chuyển hướng..." : "Kết nối với Google"}
             </button>
           )}
+
+          {/* Hướng dẫn chuẩn bị trước khi kết nối */}
+          <div className="gsc-setup-box">
+            <div className="gsc-setup-box__title">
+              <span>💡 3 bước để đồng bộ dữ liệu Search Console chuẩn nhất</span>
+              <a
+                href={GSC_WELCOME_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "#6366f1", fontSize: 12, textDecoration: "none", fontWeight: 600 }}
+              >
+                Mở Google Search Console ↗
+              </a>
+            </div>
+            <ul className="gsc-setup-steps">
+              <li>
+                <span className="gsc-step-num">1</span>
+                <span>
+                  Đảm bảo website của bạn đã được thêm và xác minh trên{" "}
+                  <a href={GSC_WELCOME_URL} target="_blank" rel="noopener noreferrer" style={{ color: "#6366f1", fontWeight: 600 }}>
+                    Google Search Console
+                  </a>{" "}
+                  (qua thẻ HTML, RankMath/Yoast, Google Analytics hoặc DNS).
+                </span>
+              </li>
+              <li>
+                <span className="gsc-step-num">2</span>
+                <span>
+                  Bấm <strong>Kết nối với Google</strong> ở trên, đăng nhập đúng Gmail quản lý website và{" "}
+                  <strong>tích chọn ô cấp quyền "Xem dữ liệu Search Console"</strong>.
+                </span>
+              </li>
+              <li>
+                <span className="gsc-step-num">3</span>
+                <span>
+                  Chọn tên miền từ danh sách để theo dõi hiệu suất SEO thực tế hoặc nhập thẳng Top Keywords vào Keyword Planner.
+                </span>
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
     );
@@ -567,6 +707,11 @@ export default function GSC() {
           <h1 style={{ margin: "0 0 4px" }}>📈 Google Search Console</h1>
           <p style={{ color: "var(--text-muted)", margin: 0, fontSize: 13 }}>
             ✅ Đã kết nối: <strong>{email}</strong>
+            {sites.length > 0 && (
+              <span style={{ marginLeft: 8, color: "var(--text-muted)" }}>
+                · {sites.length} website
+              </span>
+            )}
           </p>
         </div>
         <div className="gsc-header-actions">
@@ -576,7 +721,7 @@ export default function GSC() {
               className="select-field"
               value={selectedSite}
               onChange={(e) => setSelectedSite(e.target.value)}
-              style={{ minWidth: 240 }}
+              style={{ minWidth: 230 }}
             >
               {sites.map((s) => (
                 <option key={s.siteUrl} value={s.siteUrl}>
@@ -585,6 +730,28 @@ export default function GSC() {
               ))}
             </select>
           )}
+          <a
+            href={GSC_WELCOME_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-sm"
+            style={{ textDecoration: "none", fontSize: 12 }}
+            title="Mở Google Search Console để thêm & xác minh website mới"
+          >
+            ➕ Thêm web GSC
+          </a>
+          <button
+            className="btn btn-sm"
+            onClick={() => setShowGuide((v) => !v)}
+            style={{
+              fontSize: 12,
+              borderColor: showGuide ? "#6366f1" : undefined,
+              color: showGuide ? "#6366f1" : undefined,
+            }}
+            title="Xem hướng dẫn kết nối & xác minh website"
+          >
+            📖 Hướng dẫn
+          </button>
           {/* Days selector */}
           <div className="gsc-days-pills">
             {DAYS_OPTIONS.map((d) => (
@@ -601,7 +768,7 @@ export default function GSC() {
             className="btn btn-sm"
             onClick={handleClearCache}
             disabled={cacheClearing || sitesLoading}
-            title="Xóa cache, tải lại dữ liệu"
+            title="Xóa cache, tải lại danh sách website & dữ liệu"
           >
             {cacheClearing || sitesLoading ? "⏳" : "🔄"}
           </button>
@@ -612,30 +779,7 @@ export default function GSC() {
       </div>
 
       {renderErrorBanner()}
-
-      {!errorInfo && !sitesLoading && sites.length === 0 && (
-        <div
-          className="card"
-          style={{
-            background: "rgba(245,158,11,0.08)",
-            border: "1px solid rgba(245,158,11,0.3)",
-            padding: "14px 16px",
-            marginBottom: 16,
-            fontSize: 13.5,
-          }}
-        >
-          ⚠️ Tài khoản <strong>{email}</strong> hiện chưa có website nào được xác minh trong{" "}
-          <a
-            href="https://search.google.com/search-console"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: "#6366f1", fontWeight: 600 }}
-          >
-            Google Search Console
-          </a>
-          . Hãy thêm property trên Search Console hoặc bấm <strong>Ngắt kết nối</strong> để chuyển sang Gmail khác.
-        </div>
-      )}
+      {renderGuideOrEmptySites()}
 
       {/* Stat Cards */}
       <div className="gsc-stats-row">
