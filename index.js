@@ -85,9 +85,11 @@ app.use("/api/indexer", licenseGuard, require("./routes/indexer"));
 app.use("/api/queue", licenseGuard, require("./routes/queue"));
 app.use("/api/woo", licenseGuard, aiRateLimiter, require("./routes/woo"));
 app.use("/api/keywords", licenseGuard, aiRateLimiter, require("./routes/keywords"));
-// GSC: callback phải public (Google redirect không gửi Authorization)
+// GSC, GA4 & GTM: dùng chung callback public (Google redirect không gửi Authorization)
 app.get("/api/gsc/callback", require("./routes/gsc").callbackHandler);
 app.use("/api/gsc", licenseGuard, featureGate("googleSearchConsole"), require("./routes/gsc").router);
+app.use("/api/ga4", licenseGuard, featureGate("googleSearchConsole"), require("./routes/ga4").router);
+app.use("/api/gtm", licenseGuard, featureGate("googleSearchConsole"), require("./routes/gtm").router);
 app.use("/api/affiliate", licenseGuard, require("./routes/affiliate"));
 // Social: mỗi user tự nhập Page Token (multi-tenant, không dùng OAuth chung)
 app.use("/api/social", licenseGuard, require("./routes/social"));

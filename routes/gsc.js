@@ -383,6 +383,21 @@ router.get("/auth-url", async (req, res) => {
 async function callbackHandler(req, res) {
   const { code, state, error: oauthError } = req.query;
   if (oauthError) {
+    // Kiểm tra state để redirect về đúng trang (/ga4 hoặc /gsc) nếu người dùng bấm Hủy
+    if (state) {
+      try {
+        const states = await storage.getAll(STATE_COLLECTION);
+        const st = states.find((item) => item.state === state);
+        if (st?.flow === "ga4") {
+          await storage.delete(STATE_COLLECTION, st.id);
+          return res.redirect(`${CLIENT_URL}/ga4?ga4=error&msg=${encodeURIComponent(oauthError)}`);
+        }
+        if (st?.flow === "gtm") {
+          await storage.delete(STATE_COLLECTION, st.id);
+          return res.redirect(`${CLIENT_URL}/ga4?mode=gtm&gtm=error&msg=${encodeURIComponent(oauthError)}`);
+        }
+      } catch {}
+    }
     return res.redirect(`${CLIENT_URL}/gsc?gsc=error&msg=${encodeURIComponent(oauthError)}`);
   }
   if (!code) {
@@ -398,6 +413,17 @@ async function callbackHandler(req, res) {
       return res.redirect(`${CLIENT_URL}/gsc?gsc=error&msg=invalid_state`);
     }
     await storage.delete(STATE_COLLECTION, stateRecord.id);
+
+    // Chuyển luồng sang Google Analytics 4 hoặc Google Tag Manager nếu state thuộc flow tương ứng
+    if (stateRecord.flow === "ga4") {
+      const { handleGa4OAuthCallback } = require("./ga4");
+      return await handleGa4OAuthCallback(req, res, stateRecord);
+    }
+    if (stateRecord.flow === "gtm") {
+      const { handleGtmOAuthCallback } = require("./gtm");
+      return await handleGtmOAuthCallback(req, res, stateRecord);
+    }
+
     const userId = stateRecord.userId;
 
     const { clientId, clientSecret, redirectUri } = getGoogleOAuthConfig();
