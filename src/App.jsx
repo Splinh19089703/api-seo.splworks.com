@@ -27,6 +27,7 @@ const Queue = lazy(() => import("./pages/Queue"));
 const WooProducts = lazy(() => import("./pages/WooProducts"));
 const KeywordPlanner = lazy(() => import("./pages/KeywordPlanner"));
 const GSC = lazy(() => import("./pages/GSC"));
+const GA4 = lazy(() => import("./pages/GA4"));
 const Affiliate = lazy(() => import("./pages/Affiliate"));
 const AdminUsers = lazy(() => import("./pages/AdminUsers"));
 const SocialHub = lazy(() => import("./pages/SocialHub"));
@@ -113,6 +114,7 @@ function AppContent() {
             <Route path="/woo" element={<Suspense fallback={<PageLoader />}><WooProducts /></Suspense>} />
             <Route path="/keyword-planner" element={<Suspense fallback={<PageLoader />}><KeywordPlanner /></Suspense>} />
             <Route path="/gsc" element={<Suspense fallback={<PageLoader />}><FeatureGate feature="googleSearchConsole"><GSC /></FeatureGate></Suspense>} />
+            <Route path="/ga4" element={<Suspense fallback={<PageLoader />}><FeatureGate feature="googleSearchConsole"><GA4 /></FeatureGate></Suspense>} />
             <Route path="/affiliate" element={<Suspense fallback={<PageLoader />}><Affiliate /></Suspense>} />
             <Route path="/social" element={<Suspense fallback={<PageLoader />}><SocialHub /></Suspense>} />
             <Route path="/admin/users" element={<Suspense fallback={<PageLoader />}><AdminUsers /></Suspense>} />

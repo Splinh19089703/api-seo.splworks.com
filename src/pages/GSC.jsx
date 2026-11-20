@@ -752,6 +752,14 @@ export default function GSC() {
           >
             📖 Hướng dẫn
           </button>
+          <button
+            className="btn btn-sm"
+            onClick={() => navigate("/ga4")}
+            style={{ fontSize: 12 }}
+            title="Chuyển nhanh sang Google Analytics (GA4)"
+          >
+            📉 GA4
+          </button>
           {/* Days selector */}
           <div className="gsc-days-pills">
             {DAYS_OPTIONS.map((d) => (

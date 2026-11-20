@@ -99,6 +99,7 @@ async function fetchApi(endpoint, options = {}) {
       const err = new Error(error.error || error.message || "Request failed");
       if (error.code) err.code = error.code;
       if (error.actionUrl) err.actionUrl = error.actionUrl;
+      if (error.secondaryUrl) err.secondaryUrl = error.secondaryUrl;
       if (error.detail) err.detail = error.detail;
       throw err;
     }
@@ -559,6 +560,51 @@ export const api = {
     return fetchApi(`/gsc/trend?${q}`);
   },
   gscClearCache: () => fetchApi("/gsc/clear-cache", { method: "POST" }),
+
+  // ===== Google Analytics 4 (GA4) =====
+  ga4Status: () => fetchApi("/ga4/status"),
+  ga4AuthUrl: () => fetchApi("/ga4/auth-url"),
+  ga4Disconnect: () => fetchApi("/ga4/disconnect", { method: "POST" }),
+  ga4Properties: (refresh = false) =>
+    fetchApi(refresh ? "/ga4/properties?refresh=1" : "/ga4/properties"),
+  ga4AddManualProperty: (data) =>
+    fetchApi("/ga4/properties/manual", { method: "POST", body: data }),
+  ga4Overview: ({ propertyId, days = 28, channel = "all" }) => {
+    const q = new URLSearchParams({ propertyId, days, channel }).toString();
+    return fetchApi(`/ga4/overview?${q}`);
+  },
+  ga4Events: ({ propertyId, days = 28, channel = "all", limit = 200 }) => {
+    const q = new URLSearchParams({ propertyId, days, channel, limit }).toString();
+    return fetchApi(`/ga4/events?${q}`);
+  },
+  ga4EventPages: ({ propertyId, eventName, days = 28, channel = "all" }) => {
+    const q = new URLSearchParams({ propertyId, eventName, days, channel }).toString();
+    return fetchApi(`/ga4/event-pages?${q}`);
+  },
+  ga4Pages: ({ propertyId, days = 28, channel = "all", limit = 100 }) => {
+    const q = new URLSearchParams({ propertyId, days, channel, limit }).toString();
+    return fetchApi(`/ga4/pages?${q}`);
+  },
+  ga4Streams: (propertyId) => {
+    const q = new URLSearchParams({ propertyId }).toString();
+    return fetchApi(`/ga4/streams?${q}`);
+  },
+  ga4ClearCache: () => fetchApi("/ga4/clear-cache", { method: "POST" }),
+
+  // ===== Google Tag Manager (GTM) =====
+  gtmStatus: () => fetchApi("/gtm/status"),
+  gtmAuthUrl: () => fetchApi("/gtm/auth-url"),
+  gtmDisconnect: () => fetchApi("/gtm/disconnect", { method: "POST" }),
+  gtmContainers: (refresh = false) =>
+    fetchApi(refresh ? "/gtm/containers?refresh=1" : "/gtm/containers"),
+  gtmWorkspace: ({ accountId, containerId }) => {
+    const q = new URLSearchParams({ accountId, containerId }).toString();
+    return fetchApi(`/gtm/workspace?${q}`);
+  },
+  gtmAutoSetup: (data) =>
+    fetchApi("/gtm/auto-setup", { method: "POST", body: data }),
+  gtmExportPreset: (data) =>
+    fetchApi("/gtm/export-preset", { method: "POST", body: data }),
 
   // ===== Affiliate / CTV (Sprint 15) =====
   affiliateLink: () => fetchApi("/affiliate/link"),

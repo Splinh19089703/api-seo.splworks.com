@@ -33,6 +33,7 @@ const MORE_ITEMS = [
   { path: "/queue", icon: "📅", label: "Publish Queue" },
   { path: "/woo", icon: "🛒", label: "WooCommerce" },
   { path: "/keyword-planner", icon: "📊", label: "Keyword" },
+  { path: "/ga4", icon: "📉", label: "Google Analytics" },
   { path: "/publish", icon: "📤", label: "Đăng bài" },
   { path: "/social", icon: "📱", label: "Social" },
   { path: "/affiliate", icon: "🤝", label: "CTV" },
@@ -286,6 +287,13 @@ export default function Layout() {
               className={({ isActive }) => (isActive ? "active" : "")}
             >
               <span className="nav-icon">📈</span> Search Console
+              <span className="nav-badge" style={{ background: "var(--accent-green, #10b981)", color: "#fff", fontSize: 9, padding: "1px 5px", borderRadius: 8, fontWeight: 700, marginLeft: "auto" }}>Mới</span>
+            </NavLink>
+            <NavLink
+              to="/ga4"
+              className={({ isActive }) => (isActive ? "active" : "")}
+            >
+              <span className="nav-icon">📉</span> Google Analytics
               <span className="nav-badge" style={{ background: "var(--accent-green, #10b981)", color: "#fff", fontSize: 9, padding: "1px 5px", borderRadius: 8, fontWeight: 700, marginLeft: "auto" }}>Mới</span>
             </NavLink>
             <NavLink
