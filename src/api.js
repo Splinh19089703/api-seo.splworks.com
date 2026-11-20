@@ -96,7 +96,11 @@ async function fetchApi(endpoint, options = {}) {
       const error = await response
         .json()
         .catch(() => ({ error: `Server error (HTTP ${response.status})` }));
-      throw new Error(error.error || "Request failed");
+      const err = new Error(error.error || error.message || "Request failed");
+      if (error.code) err.code = error.code;
+      if (error.actionUrl) err.actionUrl = error.actionUrl;
+      if (error.detail) err.detail = error.detail;
+      throw err;
     }
     const jsonData = await response.json();
     return rewriteUploadImageUrls(jsonData);

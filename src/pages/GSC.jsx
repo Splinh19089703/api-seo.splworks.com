@@ -29,22 +29,6 @@ function SkeletonRows({ count = 6, cols = 5 }) {
   ));
 }
 
-/** Mini sparkline SVG */
-function Sparkline({ data, width = 80, height = 24, color = "#6366f1" }) {
-  if (!data || data.length < 2) return <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>;
-  const max = Math.max(...data);
-  const min = Math.min(...data);
-  const range = max - min || 1;
-  const pts = data
-    .map((v, i) => `${(i / (data.length - 1)) * width},${height - 2 - ((v - min) / range) * (height - 4)}`)
-    .join(" ");
-  return (
-    <svg width={width} height={height}>
-      <polyline fill="none" stroke={color} strokeWidth="1.5" points={pts} />
-    </svg>
-  );
-}
-
 /** CTR badge color */
 function ctrColor(ctr) {
   if (ctr >= 5) return "#10b981";
@@ -58,6 +42,26 @@ function posColor(pos) {
   if (pos <= 10) return "#6366f1";
   if (pos <= 20) return "#f59e0b";
   return "#ef4444";
+}
+
+function mapCallbackError(msg) {
+  if (msg === "missing_scope") {
+    return {
+      message:
+        "Bạn chưa tích chọn ô cấp quyền Google Search Console ở màn hình đăng nhập Google. Vui lòng bấm 'Cấp lại quyền Google' và tích chọn đầy đủ quyền.",
+      code: "GSC_MISSING_SCOPE",
+    };
+  }
+  if (msg === "access_denied") {
+    return {
+      message: "Bạn đã hủy cấp quyền trên màn hình Google OAuth.",
+      code: "GSC_ACCESS_DENIED",
+    };
+  }
+  return {
+    message: `Kết nối GSC thất bại: ${msg || "lỗi không xác định"}`,
+    code: "GSC_CALLBACK_ERROR",
+  };
 }
 
 // =====================================================================
@@ -75,15 +79,17 @@ export default function GSC() {
   const [email, setEmail] = useState("");
   const [authLoading, setAuthLoading] = useState(true);
   const [authUrl, setAuthUrl] = useState("");
+  const [reconnecting, setReconnecting] = useState(false);
 
   // Sites
   const [sites, setSites] = useState([]);
+  const [sitesLoading, setSitesLoading] = useState(false);
   const [selectedSite, setSelectedSite] = useState("");
 
   // Data
   const [days, setDays] = useState(28);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [errorInfo, setErrorInfo] = useState(null); // { message, code, actionUrl, detail }
 
   // Dashboard totals
   const [totals, setTotals] = useState(null);
@@ -107,53 +113,91 @@ export default function GSC() {
   const mountedRef = useRef(true);
   useEffect(() => () => { mountedRef.current = false; }, []);
 
+  const setErrorFromException = (prefix, e) => {
+    const rawMsg = e?.message || "Lỗi không xác định";
+    // Tránh lặp tiền tố nếu thông báo từ server đã đầy đủ nghĩa tiếng Việt
+    const cleanMsg =
+      e?.code === "GSC_API_DISABLED" ||
+      e?.code === "GSC_MISSING_SCOPE" ||
+      e?.code === "GSC_TOKEN_EXPIRED"
+        ? rawMsg
+        : `${prefix}: ${rawMsg}`;
+    setErrorInfo({
+      message: cleanMsg,
+      code: e?.code || "",
+      actionUrl: e?.actionUrl || "",
+      detail: e?.detail || "",
+    });
+  };
+
   // =====================================================================
-  // Init — Check connection status + handle OAuth callback
+  // Init — Check connection status + handle OAuth callback (1 lần duy nhất)
   // =====================================================================
 
   useEffect(() => {
-    checkStatus();
-    // Handle OAuth callback result
     const gscParam = searchParams.get("gsc");
-    if (gscParam === "success") {
-      setError("");
-      checkStatus();
-    } else if (gscParam === "error") {
-      setError(`Kết nối GSC thất bại: ${searchParams.get("msg") || "lỗi không xác định"}`);
+    const msgParam = searchParams.get("msg");
+
+    if (gscParam === "error") {
+      setErrorInfo(mapCallbackError(msgParam));
+      navigate("/gsc", { replace: true });
+    } else if (gscParam === "success") {
+      setErrorInfo(null);
+      navigate("/gsc", { replace: true });
     }
+
+    checkStatus(gscParam === "success");
   }, []);
 
-  const checkStatus = async () => {
+  const checkStatus = async (forceRefreshSites = false) => {
     setAuthLoading(true);
     try {
       const status = await api.gscStatus();
+      if (!mountedRef.current) return;
       setConnected(status.connected);
       setEmail(status.email || "");
       if (status.connected) {
-        loadSites();
+        if (status.missingScope) {
+          setErrorInfo({
+            message:
+              "Tài khoản Google chưa cấp quyền đọc dữ liệu Search Console. Vui lòng bấm 'Cấp lại quyền Google' và tích chọn ô quyền Search Console.",
+            code: "GSC_MISSING_SCOPE",
+          });
+        } else {
+          await loadSites(forceRefreshSites);
+        }
       } else {
-        // Pre-fetch auth URL
         try {
           const { url } = await api.gscAuthUrl();
-          setAuthUrl(url);
+          if (mountedRef.current) setAuthUrl(url);
         } catch {}
       }
     } catch {
-      setConnected(false);
+      if (mountedRef.current) setConnected(false);
     } finally {
-      setAuthLoading(false);
+      if (mountedRef.current) setAuthLoading(false);
     }
   };
 
-  const loadSites = async () => {
+  const loadSites = async (forceRefresh = false) => {
+    setSitesLoading(true);
     try {
-      const { sites } = await api.gscSites();
-      setSites(sites || []);
-      if (sites && sites.length > 0 && !selectedSite) {
-        setSelectedSite(sites[0].siteUrl);
+      const data = await api.get(forceRefresh ? "/gsc/sites?refresh=1" : "/gsc/sites");
+      if (!mountedRef.current) return;
+      const list = data?.sites || [];
+      setSites(list);
+      setErrorInfo(null);
+      if (list.length > 0) {
+        setSelectedSite((prev) =>
+          prev && list.some((s) => s.siteUrl === prev) ? prev : list[0].siteUrl
+        );
       }
     } catch (e) {
-      setError("Không thể tải danh sách sites: " + e.message);
+      if (mountedRef.current) {
+        setErrorFromException("Không thể tải danh sách sites", e);
+      }
+    } finally {
+      if (mountedRef.current) setSitesLoading(false);
     }
   };
 
@@ -170,7 +214,7 @@ export default function GSC() {
   const loadDashboard = useCallback(async () => {
     if (!selectedSite) return;
     setLoading(true);
-    setError("");
+    setErrorInfo(null);
     setTotals(null);
     setTrend([]);
 
@@ -178,26 +222,27 @@ export default function GSC() {
     const startDate = new Date(Date.now() - days * 86400000).toISOString().split("T")[0];
 
     try {
-      // Load summary + trend parallel
+      // Load dimensionless accurate totals + daily trend in parallel
       const [summaryRes, trendRes] = await Promise.allSettled([
-        api.gscData({ siteUrl: selectedSite, startDate, endDate, dimensions: ["date"], rowLimit: days }),
+        api.gscData({ siteUrl: selectedSite, startDate, endDate, dimensions: [], rowLimit: 1 }),
         api.gscTrend({ siteUrl: selectedSite, days }),
       ]);
 
       if (!mountedRef.current) return;
       if (summaryRes.status === "fulfilled") {
         setTotals(summaryRes.value.totals);
+      } else if (summaryRes.reason) {
+        setErrorFromException("Lỗi tải tổng quan", summaryRes.reason);
       }
       if (trendRes.status === "fulfilled") {
         setTrend(trendRes.value.trend || []);
       }
     } catch (e) {
-      if (mountedRef.current) setError("Lỗi tải dữ liệu: " + e.message);
+      if (mountedRef.current) setErrorFromException("Lỗi tải dữ liệu", e);
     } finally {
       if (mountedRef.current) setLoading(false);
     }
 
-    // Load table data
     loadTable(activeTab);
   }, [selectedSite, days, activeTab]);
 
@@ -213,7 +258,7 @@ export default function GSC() {
         if (mountedRef.current) setPages(p || []);
       }
     } catch (e) {
-      if (mountedRef.current) setError("Lỗi tải bảng: " + e.message);
+      if (mountedRef.current) setErrorFromException("Lỗi tải bảng", e);
     } finally {
       if (mountedRef.current) setTableLoading(false);
     }
@@ -225,11 +270,36 @@ export default function GSC() {
   };
 
   // =====================================================================
-  // Connect / Disconnect
+  // Connect / Reconnect / Disconnect / Clear Cache
   // =====================================================================
 
-  const handleConnect = () => {
-    if (authUrl) window.location.href = authUrl;
+  const handleConnect = async () => {
+    if (authUrl) {
+      window.location.href = authUrl;
+      return;
+    }
+    setReconnecting(true);
+    try {
+      const { url } = await api.gscAuthUrl();
+      if (url) window.location.href = url;
+    } catch (e) {
+      setErrorFromException("Không tạo được link kết nối Google", e);
+      setReconnecting(false);
+    }
+  };
+
+  const handleReconnect = async () => {
+    setReconnecting(true);
+    try {
+      const { url } = await api.gscAuthUrl();
+      if (url) {
+        window.location.href = url;
+        return;
+      }
+    } catch (e) {
+      setErrorFromException("Không tạo được link cấp quyền lại", e);
+    }
+    setReconnecting(false);
   };
 
   const handleDisconnect = async () => {
@@ -244,8 +314,13 @@ export default function GSC() {
       setTrend([]);
       setQueries([]);
       setPages([]);
+      setErrorInfo(null);
+      try {
+        const { url } = await api.gscAuthUrl();
+        if (mountedRef.current) setAuthUrl(url);
+      } catch {}
     } catch (e) {
-      setError("Ngắt kết nối thất bại: " + e.message);
+      setErrorFromException("Ngắt kết nối thất bại", e);
     }
   };
 
@@ -254,11 +329,15 @@ export default function GSC() {
     setCacheClearing(true);
     try {
       await api.gscClearCache();
-      loadDashboard();
+      if (sites.length === 0) {
+        await loadSites(true);
+      } else {
+        await loadDashboard();
+      }
     } catch (e) {
-      setError("Xóa cache thất bại: " + e.message);
+      setErrorFromException("Xóa cache thất bại", e);
     } finally {
-      setCacheClearing(false);
+      if (mountedRef.current) setCacheClearing(false);
     }
   };
 
@@ -270,7 +349,6 @@ export default function GSC() {
     if (!queries.length) return;
     setImporting(true);
     try {
-      // Chuyển GSC queries sang format Keyword Planner
       const kwList = queries.slice(0, 50).map((q) => ({
         keyword: q.query,
         type: "main",
@@ -283,14 +361,89 @@ export default function GSC() {
         source: "gsc",
         trend: [],
       }));
-      // Store in sessionStorage to pass to Keyword Planner
       sessionStorage.setItem("gsc_import_kw", JSON.stringify(kwList));
       sessionStorage.setItem("gsc_import_site", selectedSite);
-      // Navigate đúng với BrowserRouter
       navigate("/keyword-planner?from=gsc");
     } finally {
       setImporting(false);
     }
+  };
+
+  // =====================================================================
+  // Error Banner Renderer
+  // =====================================================================
+  const renderErrorBanner = () => {
+    if (!errorInfo) return null;
+    const isApiDisabled = errorInfo.code === "GSC_API_DISABLED";
+    const needsReauth =
+      errorInfo.code === "GSC_MISSING_SCOPE" || errorInfo.code === "GSC_TOKEN_EXPIRED";
+
+    return (
+      <div
+        className="card"
+        style={{
+          background: "rgba(239,68,68,0.08)",
+          border: "1px solid rgba(239,68,68,0.3)",
+          padding: "14px 16px",
+          marginBottom: 16,
+        }}
+      >
+        <p style={{ color: "#dc2626", margin: 0, fontSize: 13.5, fontWeight: 600, lineHeight: 1.5 }}>
+          ❌ {errorInfo.message}
+        </p>
+        {isApiDisabled && (
+          <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+            {errorInfo.actionUrl && (
+              <a
+                href={errorInfo.actionUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-primary btn-sm"
+                style={{ textDecoration: "none" }}
+              >
+                🔗 Mở Google Cloud bật Search Console API
+              </a>
+            )}
+            <button
+              className="btn btn-sm"
+              onClick={() => loadSites(true)}
+              disabled={sitesLoading}
+            >
+              {sitesLoading ? "⏳ Đang kiểm tra..." : "🔄 Đã bật xong — Tải lại danh sách site"}
+            </button>
+          </div>
+        )}
+        {needsReauth && (
+          <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={handleReconnect}
+              disabled={reconnecting}
+            >
+              {reconnecting ? "⏳ Đang chuyển hướng..." : "🔑 Cấp lại quyền Google Search Console"}
+            </button>
+          </div>
+        )}
+        {!isApiDisabled && !needsReauth && connected && (
+          <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+            <button
+              className="btn btn-sm"
+              onClick={() => (sites.length === 0 ? loadSites(true) : loadDashboard())}
+              disabled={sitesLoading || loading}
+            >
+              🔄 Thử tải lại
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={handleReconnect}
+              disabled={reconnecting}
+            >
+              🔑 Kết nối lại Google
+            </button>
+          </div>
+        )}
+      </div>
+    );
   };
 
   // =====================================================================
@@ -313,13 +466,10 @@ export default function GSC() {
     return (
       <div className="gsc-trend-chart">
         <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: "100%", height: 120 }}>
-          {/* Grid lines */}
           {[0.25, 0.5, 0.75, 1].map((t) => (
-            <line key={t} x1={0} x2={W} y1={H - 8 - t * (H - 16)} y2={H - 8 - t * (H - 16)} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
+            <line key={t} x1={0} x2={W} y1={H - 8 - t * (H - 16)} y2={H - 8 - t * (H - 16)} stroke="rgba(148,163,184,0.15)" strokeWidth="1" />
           ))}
-          {/* Impressions line (muted) */}
-          <polyline fill="none" stroke="rgba(99,102,241,0.3)" strokeWidth="1.5" points={pts(impressions, maxImpr)} />
-          {/* Clicks line (vivid) */}
+          <polyline fill="none" stroke="rgba(99,102,241,0.35)" strokeWidth="1.5" points={pts(impressions, maxImpr)} />
           <polyline fill="none" stroke="#6366f1" strokeWidth="2" points={pts(clicks, maxClicks)} />
         </svg>
         <div className="gsc-trend-labels">
@@ -329,7 +479,7 @@ export default function GSC() {
         </div>
         <div className="gsc-trend-legend">
           <span><span style={{ color: "#6366f1", fontWeight: 700 }}>—</span> Clicks</span>
-          <span><span style={{ color: "rgba(99,102,241,0.4)", fontWeight: 700 }}>—</span> Impressions</span>
+          <span><span style={{ color: "rgba(99,102,241,0.45)", fontWeight: 700 }}>—</span> Impressions</span>
         </div>
       </div>
     );
@@ -357,18 +507,14 @@ export default function GSC() {
           Kết nối GSC để xem clicks, impressions, top keywords và top pages ngay trong SPLSEO.
         </p>
 
-        {error && (
-          <div className="card" style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", padding: 16, marginBottom: 20 }}>
-            <p style={{ color: "#ef4444", margin: 0 }}>❌ {error}</p>
-          </div>
-        )}
+        {renderErrorBanner()}
 
         <div className="gsc-connect-card card">
           <div className="gsc-connect-icon">📈</div>
           <h2>Kết nối Google Search Console</h2>
           <p style={{ color: "var(--text-muted)", maxWidth: 480, margin: "0 auto 24px" }}>
             Sau khi kết nối, bạn có thể xem dữ liệu SEO thực tế: clicks, impressions, CTR,
-            vị trí trung bình, top keywords và top pages — tất cả trong 1 giao diện.
+            vị trí trung bình, top keywords và top pages trong cùng một giao diện.
           </p>
           <div className="gsc-features-preview">
             {[
@@ -398,13 +544,13 @@ export default function GSC() {
               vào file <code>.env</code> của server.
             </div>
           ) : (
-            <button className="btn btn-primary gsc-connect-btn" onClick={handleConnect}>
+            <button className="btn btn-primary gsc-connect-btn" onClick={handleConnect} disabled={reconnecting}>
               <img
                 src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
                 alt="Google"
                 style={{ width: 18, height: 18 }}
               />
-              Kết nối với Google
+              {reconnecting ? "Đang chuyển hướng..." : "Kết nối với Google"}
             </button>
           )}
         </div>
@@ -451,8 +597,13 @@ export default function GSC() {
               </button>
             ))}
           </div>
-          <button className="btn btn-sm" onClick={handleClearCache} disabled={cacheClearing} title="Xóa cache, tải lại data">
-            {cacheClearing ? "⏳" : "🔄"}
+          <button
+            className="btn btn-sm"
+            onClick={handleClearCache}
+            disabled={cacheClearing || sitesLoading}
+            title="Xóa cache, tải lại dữ liệu"
+          >
+            {cacheClearing || sitesLoading ? "⏳" : "🔄"}
           </button>
           <button className="btn btn-sm" style={{ color: "#ef4444" }} onClick={handleDisconnect}>
             Ngắt kết nối
@@ -460,9 +611,29 @@ export default function GSC() {
         </div>
       </div>
 
-      {error && (
-        <div className="card" style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", padding: 12, marginBottom: 16 }}>
-          <p style={{ color: "#ef4444", margin: 0, fontSize: 13 }}>❌ {error}</p>
+      {renderErrorBanner()}
+
+      {!errorInfo && !sitesLoading && sites.length === 0 && (
+        <div
+          className="card"
+          style={{
+            background: "rgba(245,158,11,0.08)",
+            border: "1px solid rgba(245,158,11,0.3)",
+            padding: "14px 16px",
+            marginBottom: 16,
+            fontSize: 13.5,
+          }}
+        >
+          ⚠️ Tài khoản <strong>{email}</strong> hiện chưa có website nào được xác minh trong{" "}
+          <a
+            href="https://search.google.com/search-console"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: "#6366f1", fontWeight: 600 }}
+          >
+            Google Search Console
+          </a>
+          . Hãy thêm property trên Search Console hoặc bấm <strong>Ngắt kết nối</strong> để chuyển sang Gmail khác.
         </div>
       )}
 
@@ -515,7 +686,6 @@ export default function GSC() {
 
       {/* Table — Top Queries / Top Pages */}
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-        {/* Tab bar */}
         <div className="gsc-table-tabs">
           <button
             className={`gsc-table-tab${activeTab === "queries" ? " active" : ""}`}
